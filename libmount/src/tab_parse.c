@@ -323,7 +323,21 @@ static int mnt_parse_utab_line(struct libmnt_fs *fs, const char *s)
 		if (!*p)
 			break;
 
-		if (!fs->source && !strncmp(p, "SRC=", 4)) {
+		if (!fs->uniq_id && !strncmp(p, "UNIQID=", 7)) {
+			int rc = 0;
+
+			end = next_u64(p + 7, &fs->uniq_id, &rc);
+			if (!end || rc)
+				return rc;
+
+		} else if (!fs->id && !strncmp(p, "ID=", 3)) {
+			int rc = 0;
+
+			end = next_s32(p + 3, &fs->id, &rc);
+			if (!end || rc)
+				return rc;
+
+		} else if (!fs->source && !strncmp(p, "SRC=", 4)) {
 			char *v = unmangle(p + 4, &end);
 			if (!v)
 				goto enomem;
@@ -967,11 +981,10 @@ int mnt_table_parse_dir(struct libmnt_table *tb, const char *dirname)
 struct libmnt_table *__mnt_new_table_from_file(const char *filename, int fmt, int empty_for_enoent)
 {
 	struct libmnt_table *tb;
-	struct stat st;
 
 	if (!filename)
 		return NULL;
-	if (stat(filename, &st))
+	if (!mnt_is_path(filename))
 		return empty_for_enoent ? mnt_new_table() : NULL;
 
 	tb = mnt_new_table();
@@ -1142,7 +1155,7 @@ int mnt_table_parse_fstab(struct libmnt_table *tb, const char *filename)
 		filename = mnt_get_fstab_path();
 	if (!filename)
 		return -EINVAL;
-	if (stat(filename, &st) != 0)
+	if (mnt_safe_stat(filename, &st) != 0)
 		return -errno;
 
 	tb->fmt = MNT_FMT_FSTAB;
@@ -1171,6 +1184,8 @@ static struct libmnt_fs *mnt_table_merge_user_fs(struct libmnt_table *tb, struct
 	struct libmnt_fs *fs;
 	struct libmnt_iter itr;
 	const char *optstr, *src, *target, *root, *attrs;
+	int id;
+	uint64_t uniq_id;
 
 	if (!tb || !uf)
 		return NULL;
@@ -1182,6 +1197,8 @@ static struct libmnt_fs *mnt_table_merge_user_fs(struct libmnt_table *tb, struct
 	optstr = mnt_fs_get_user_options(uf);
 	attrs = mnt_fs_get_attributes(uf);
 	root = mnt_fs_get_root(uf);
+	id = mnt_fs_get_id(uf);
+	uniq_id = mnt_fs_get_uniq_id(uf);
 
 	if (!src || !target || !root || (!attrs && !optstr))
 		return NULL;
@@ -1194,20 +1211,29 @@ static struct libmnt_fs *mnt_table_merge_user_fs(struct libmnt_table *tb, struct
 		if (fs->flags & MNT_FS_MERGED)
 			continue;
 
-		if (r && strcmp(r, root) == 0
+		if (uniq_id > 0 && mnt_fs_get_uniq_id(fs)) {
+			DBG(TAB, ul_debugobj(tb, " using uniq ID"));
+			if (mnt_fs_get_uniq_id(fs) == uniq_id)
+				break;
+
+		} else if (id > 0 && mnt_fs_get_id(fs)) {
+			DBG(TAB, ul_debugobj(tb, " using ID"));
+			if (mnt_fs_get_id(fs) == id)
+				break;
+
+		} else if (r && strcmp(r, root) == 0
 		    && mnt_fs_streq_target(fs, target)
 		    && mnt_fs_streq_srcpath(fs, src))
 			break;
 	}
 
 	if (fs) {
-		DBG(TAB, ul_debugobj(tb, "found fs -- appending user optstr"));
+		DBG(TAB, ul_debugobj(tb, " found"));
 		mnt_fs_append_options(fs, optstr);
 		mnt_fs_append_attributes(fs, attrs);
 		mnt_fs_set_bindsrc(fs, mnt_fs_get_bindsrc(uf));
 		fs->flags |= MNT_FS_MERGED;
 
-		DBG(TAB, ul_debugobj(tb, "found fs:"));
 		DBG(TAB, mnt_fs_print_debug(fs, stderr));
 	}
 	return fs;

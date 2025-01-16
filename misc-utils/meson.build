@@ -12,6 +12,11 @@ look_sources = files(
   'look.c',
 )
 
+lastlog2_sources = files(
+  'lastlog2.c',
+) + \
+  strutils_c
+
 mcookie_sources = files(
   'mcookie.c',
 ) + \
@@ -39,24 +44,6 @@ lsblk_sources = files(
   'lsblk.h',
 )
 
-lsfd_sources = files (
-  'lsfd.c',
-  'lsfd.h',
-  'lsfd-filter.h',
-  'lsfd-filter.c',
-  'lsfd-counter.h',
-  'lsfd-counter.c',
-  'lsfd-decode-file-flags.c',
-  'lsfd-file.c',
-  'lsfd-cdev.c',
-  'lsfd-bdev.c',
-  'lsfd-sock.c',
-  'lsfd-sock.h',
-  'lsfd-sock-xinfo.c',
-  'lsfd-unkn.c',
-  'lsfd-fifo.c',
-)
-
 uuidgen_sources = files(
   'uuidgen.c',
 )
@@ -75,7 +62,35 @@ test_uuidd_sources = files(
   'test_uuidd.c',
 )
 
+if build_liblastlog2 and systemd.found()
+  lastlog2_tmpfiles = configure_file(
+    input : 'lastlog2-tmpfiles.conf.in',
+    output : 'lastlog2-tmpfiles.conf',
+    configuration : conf)
+  install_data(
+    lastlog2_tmpfiles,
+    install_dir : '/usr/lib/tmpfiles.d',
+    rename : 'lastlog2.conf')
+
+  lastlog2_service = configure_file(
+    input : 'lastlog2-import.service.in',
+    output : 'lastlog2-import.service',
+    configuration : conf)
+  install_data(
+    lastlog2_service,
+    install_dir : systemdsystemunitdir)
+endif
+
 if build_uuidd and systemd.found()
+  uuidd_tmpfiles = configure_file(
+    input : 'uuidd-tmpfiles.conf.in',
+    output : 'uuidd-tmpfiles.conf',
+    configuration : conf)
+  install_data(
+    uuidd_tmpfiles,
+    install_dir : '/usr/lib/tmpfiles.d',
+    rename : 'uuidd.conf')
+
   uuidd_service = configure_file(
     input : 'uuidd.service.in',
     output : 'uuidd.service',
@@ -91,6 +106,21 @@ if build_uuidd and systemd.found()
   install_data(
     uuidd_socket,
     install_dir : systemdsystemunitdir)
+
+  install_data(
+    'uuidd-sysusers.conf',
+    install_dir: systemd_sysusers_dir,
+    rename : 'uuidd.conf')
+endif
+if build_uuidd and sysvinit
+  uuidd_rc = configure_file(
+    input : 'uuidd.rc.in',
+    output : 'uuidd.rc',
+    configuration : conf)
+  install_data(
+    uuidd_rc,
+    install_mode : 'rwxr-xr-x',
+    install_dir : sysvinitrcdir)
 endif
 
 blkid_sources = files(
@@ -124,11 +154,17 @@ getopt_sources = files(
   'getopt.c',
 )
 
-install_data(
-  'getopt-example.bash',
-  'getopt-example.tcsh',
-  install_dir : docdir,
-  install_mode: 'rwxr-xr-x')
+if not get_option('build-getopt').disabled()
+  install_data(
+    'getopt-example.bash',
+    'getopt-example.tcsh',
+    install_dir : docdir,
+    install_mode: 'rwxr-xr-x')
+endif
+
+exch_sources = files(
+  'exch.c',
+)
 
 fincore_sources = files(
   'fincore.c',
@@ -150,4 +186,12 @@ pipesz_sources = files(
 
 fadvise_sources = files(
   'fadvise.c',
+)
+
+waitpid_sources = files(
+  'waitpid.c',
+)
+
+lsclocks_sources = files(
+  'lsclocks.c',
 )

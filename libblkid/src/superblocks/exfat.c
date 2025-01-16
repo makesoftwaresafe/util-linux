@@ -49,6 +49,8 @@ struct exfat_entry_label {
 #define EXFAT_ENTRY_EOD		0x00
 #define EXFAT_ENTRY_LABEL	0x83
 
+#define EXFAT_MAX_DIR_SIZE	(256 * 1024 * 1024)
+
 static uint64_t block_to_offset(const struct exfat_super_block *sb,
 		uint64_t block)
 {
@@ -91,7 +93,7 @@ static struct exfat_entry_label *find_label(blkid_probe pr,
 	uint32_t cluster = le32_to_cpu(sb->FirstClusterOfRootDirectory);
 	uint64_t offset = cluster_to_offset(sb, cluster);
 	uint8_t *entry;
-	const size_t max_iter = 10000;
+	const size_t max_iter = EXFAT_MAX_DIR_SIZE / EXFAT_ENTRY_SIZE;
 	size_t i = 0;
 
 	for (; i < max_iter; i++) {
@@ -119,7 +121,7 @@ static struct exfat_entry_label *find_label(blkid_probe pr,
 }
 
 /* From https://docs.microsoft.com/en-us/windows/win32/fileio/exfat-specification#34-main-and-backup-boot-checksum-sub-regions */
-static uint32_t exfat_boot_checksum(unsigned char *sectors,
+static uint32_t exfat_boot_checksum(const unsigned char *sectors,
 				    size_t sector_size)
 {
 	uint32_t n_bytes = sector_size * 11;
@@ -141,7 +143,7 @@ static int exfat_validate_checksum(blkid_probe pr,
 {
 	size_t sector_size = BLOCK_SIZE(sb);
 	/* 11 sectors will be checksummed, the 12th contains the expected */
-	unsigned char *data = blkid_probe_get_buffer(pr, 0, sector_size * 12);
+	const unsigned char *data = blkid_probe_get_buffer(pr, 0, sector_size * 12);
 	if (!data)
 		return 0;
 
@@ -159,6 +161,8 @@ static int exfat_validate_checksum(blkid_probe pr,
 	return 1;
 }
 
+#define in_range_inclusive(val, start, stop) (val >= start && val <= stop)
+
 static int exfat_valid_superblock(blkid_probe pr, const struct exfat_super_block *sb)
 {
 	if (le16_to_cpu(sb->BootSignature) != 0xAA55)
@@ -170,9 +174,40 @@ static int exfat_valid_superblock(blkid_probe pr, const struct exfat_super_block
 	if (memcmp(sb->JumpBoot, "\xEB\x76\x90", 3) != 0)
 		return 0;
 
+	if (memcmp(sb->FileSystemName, "EXFAT   ", 8) != 0)
+		return 0;
+
 	for (size_t i = 0; i < sizeof(sb->MustBeZero); i++)
 		if (sb->MustBeZero[i] != 0x00)
 			return 0;
+
+	if (!in_range_inclusive(sb->NumberOfFats, 1, 2))
+		return 0;
+
+	if (!in_range_inclusive(sb->BytesPerSectorShift, 9, 12))
+		return 0;
+
+	if (!in_range_inclusive(sb->SectorsPerClusterShift,
+				0,
+				25 - sb->BytesPerSectorShift))
+		return 0;
+
+	if (!in_range_inclusive(le32_to_cpu(sb->FatOffset),
+				24,
+				le32_to_cpu(sb->ClusterHeapOffset) -
+					(le32_to_cpu(sb->FatLength) * sb->NumberOfFats)))
+		return 0;
+
+	if (!in_range_inclusive(le32_to_cpu(sb->ClusterHeapOffset),
+				le32_to_cpu(sb->FatOffset) +
+					le32_to_cpu(sb->FatLength) * sb->NumberOfFats,
+				1U << (32 - 1)))
+		return 0;
+
+	if (!in_range_inclusive(le32_to_cpu(sb->FirstClusterOfRootDirectory),
+				2,
+				le32_to_cpu(sb->ClusterCount) + 1))
+		return 0;
 
 	if (!exfat_validate_checksum(pr, sb))
 		return 0;
@@ -189,7 +224,7 @@ extern int blkid_probe_is_exfat(blkid_probe pr);
  */
 int blkid_probe_is_exfat(blkid_probe pr)
 {
-	struct exfat_super_block *sb;
+	const struct exfat_super_block *sb;
 	const struct blkid_idmag *mag = NULL;
 	int rc;
 
@@ -211,7 +246,7 @@ int blkid_probe_is_exfat(blkid_probe pr)
 
 static int probe_exfat(blkid_probe pr, const struct blkid_idmag *mag)
 {
-	struct exfat_super_block *sb;
+	const struct exfat_super_block *sb;
 	struct exfat_entry_label *label;
 
 	sb = blkid_probe_get_sb(pr, mag, struct exfat_super_block);

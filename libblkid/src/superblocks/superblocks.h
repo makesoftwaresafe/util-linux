@@ -9,7 +9,7 @@
 
 #include "blkidP.h"
 
-enum BLKID_ENDIANNESS {
+enum blkid_endianness {
 	BLKID_ENDIANNESS_LITTLE,
 	BLKID_ENDIANNESS_BIG,
 };
@@ -68,6 +68,7 @@ extern const struct blkid_idinfo snapcow_idinfo;
 extern const struct blkid_idinfo verity_hash_idinfo;
 extern const struct blkid_idinfo integrity_idinfo;
 extern const struct blkid_idinfo luks_idinfo;
+extern const struct blkid_idinfo luks_opal_idinfo;
 extern const struct blkid_idinfo highpoint37x_idinfo;
 extern const struct blkid_idinfo highpoint45x_idinfo;
 extern const struct blkid_idinfo squashfs_idinfo;
@@ -91,6 +92,7 @@ extern const struct blkid_idinfo nilfs2_idinfo;
 extern const struct blkid_idinfo exfat_idinfo;
 extern const struct blkid_idinfo f2fs_idinfo;
 extern const struct blkid_idinfo bcache_idinfo;
+extern const struct blkid_idinfo bcachefs_idinfo;
 extern const struct blkid_idinfo mpool_idinfo;
 extern const struct blkid_idinfo vdo_idinfo;
 extern const struct blkid_idinfo stratis_idinfo;
@@ -127,9 +129,21 @@ int blkid_probe_set_block_size(blkid_probe pr, unsigned block_size);
 int blkid_probe_set_fssize(blkid_probe pr, uint64_t size);
 int blkid_probe_set_fslastblock(blkid_probe pr, uint64_t lastblock);
 int blkid_probe_set_fsblocksize(blkid_probe pr, uint32_t block_size);
-int blkid_probe_set_fsendianness(blkid_probe pr, enum BLKID_ENDIANNESS endianness);
+int blkid_probe_set_fsendianness(blkid_probe pr, enum blkid_endianness endianness);
 
 extern int blkid_probe_is_bitlocker(blkid_probe pr);
 extern int blkid_probe_is_ntfs(blkid_probe pr);
+
+/*
+ * utility functions
+ */
+static inline int blkid32_to_cpu(enum blkid_endianness e, uint32_t i)
+{
+	if (e == BLKID_ENDIANNESS_LITTLE)
+		return le32_to_cpu(i);
+	else if (e == BLKID_ENDIANNESS_BIG)
+		return be32_to_cpu(i);
+	abort();
+}
 
 #endif /* _BLKID_SUPERBLOCKS_H */

@@ -90,9 +90,9 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -v, --verbose        display status information\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(22));
+	fprintf(out, USAGE_HELP_OPTIONS(22));
 
-	printf(USAGE_MAN_TAIL("chrt(1)"));
+	fprintf(out, USAGE_MAN_TAIL("chrt(1)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -299,7 +299,7 @@ static int set_sched_one(struct chrt_ctl *ctl, pid_t pid)
 	if (ctl->policy != SCHED_DEADLINE)
 		return set_sched_one_by_setscheduler(ctl, pid);
 
-	/* no changeed by chrt, follow the current setting */
+	/* not changed by chrt, follow the current setting */
 	sa.sched_nice = getpriority(PRIO_PROCESS, pid);
 
 	/* use main() to check if the setting makes sense */
@@ -459,7 +459,7 @@ int main(int argc, char **argv)
 	if (ctl->policy == SCHED_DEADLINE) {
 		/* The basic rule is runtime <= deadline <= period, so we can
 		 * make deadline and runtime optional on command line. Note we
-		 * don't check any values or set any defaults, it's kernel
+		 * don't check any values or set any defaults; it's kernel's
 		 * responsibility.
 		 */
 		if (ctl->deadline == 0)
@@ -485,6 +485,8 @@ int main(int argc, char **argv)
 
 	if (!ctl->pid) {
 		argv += optind + 1;
+		if (strcmp(argv[0], "--") == 0)
+			argv++;
 		execvp(argv[0], argv);
 		errexec(argv[0]);
 	}

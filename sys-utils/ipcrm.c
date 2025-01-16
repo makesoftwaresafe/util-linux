@@ -1,38 +1,31 @@
 /*
- * krishna balasubramanian 1993
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 1993 rishna balasubramanian
  *
  * 1999-02-22 Arkadiusz Miśkiewicz <misiek@pld.ORG.PL>
  * - added Native Language Support
  *
  * 1999-04-02 frank zago
  * - can now remove several id's in the same call
- *
  */
-
 #include <errno.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <sys/sem.h>
-#include <sys/shm.h>
 #include <sys/types.h>
 #include "c.h"
 #include "nls.h"
 #include "strutils.h"
 #include "closestream.h"
 
-#ifndef HAVE_UNION_SEMUN
-/* according to X/OPEN we have to define it ourselves */
-union semun {
-	int val;
-	struct semid_ds *buf;
-	unsigned short int *array;
-	struct seminfo *__buf;
-};
-#endif
+#include "ipcutils.h"
 
 typedef enum type_id {
 	SHM,
@@ -65,8 +58,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -v, --verbose              explain what is being done\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(28));
-	printf(USAGE_MAN_TAIL("ipcrm(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(28));
+	fprintf(out, USAGE_MAN_TAIL("ipcrm(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -276,13 +269,6 @@ static int remove_all(type_id type)
 			ret |= remove_id(SEM, 0, rm_me);
 		}
 	}
-/* kFreeBSD hackery -- ah 20140723 */
-#ifndef MSG_STAT
-#define MSG_STAT 11
-#endif
-#ifndef MSG_INFO
-#define MSG_INFO 12
-#endif
 	if (type == MSG || type == ALL) {
 		maxid =
 		    msgctl(0, MSG_INFO, (struct msqid_ds *)(void *)&msginfo);

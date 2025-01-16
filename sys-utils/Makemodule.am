@@ -113,6 +113,13 @@ rfkill_LDADD = $(LDADD) libcommon.la libsmartcols.la
 rfkill_CFLAGS = $(AM_CFLAGS) -I$(ul_libsmartcols_incdir)
 endif
 
+if BUILD_SETPGID
+usrbin_exec_PROGRAMS += setpgid
+MANPAGES += sys-utils/setpgid.1
+dist_noinst_DATA += sys-utils/setpgid.1.adoc
+setpgid_SOURCES = sys-utils/setpgid.c
+endif
+
 if BUILD_SETSID
 usrbin_exec_PROGRAMS += setsid
 MANPAGES += sys-utils/setsid.1
@@ -157,7 +164,7 @@ if BUILD_DMESG
 bin_PROGRAMS += dmesg
 MANPAGES += sys-utils/dmesg.1
 dist_noinst_DATA += sys-utils/dmesg.1.adoc
-dmesg_SOURCES = sys-utils/dmesg.c lib/monotonic.c
+dmesg_SOURCES = sys-utils/dmesg.c lib/monotonic.c include/pager.h lib/pager.c
 dmesg_LDADD = $(LDADD) libcommon.la libtcolors.la $(REALTIME_LIBS)
 dmesg_CFLAGS = $(AM_CFLAGS)
 check_PROGRAMS += test_dmesg
@@ -231,6 +238,7 @@ usrbin_exec_PROGRAMS += setarch
 MANPAGES += sys-utils/setarch.8
 dist_noinst_DATA += sys-utils/setarch.8.adoc
 setarch_SOURCES = sys-utils/setarch.c
+setarch_LDADD = $(LDADD) libcommon.la
 
 SETARCH_LINKS = uname26 linux32 linux64
 
@@ -523,7 +531,8 @@ if BUILD_NSENTER
 usrbin_exec_PROGRAMS += nsenter
 MANPAGES += sys-utils/nsenter.1
 dist_noinst_DATA += sys-utils/nsenter.1.adoc
-nsenter_SOURCES = sys-utils/nsenter.c lib/exec_shell.c
+nsenter_SOURCES = sys-utils/nsenter.c lib/exec_shell.c \
+		  lib/caputils.c
 nsenter_LDADD = $(LDADD) libcommon.la $(SELINUX_LIBS)
 
 if HAVE_STATIC_NSENTER
@@ -561,6 +570,11 @@ hwclock_SOURCES += \
 	lib/monotonic.c
 hwclock_LDADD += $(REALTIME_LIBS)
 endif
+if HURD
+hwclock_SOURCES += \
+	sys-utils/hwclock-rtc.c \
+	lib/monotonic.c
+endif
 if HAVE_AUDIT
 hwclock_LDADD += -laudit
 endif
@@ -572,5 +586,9 @@ MANPAGES += sys-utils/setpriv.1
 dist_noinst_DATA += sys-utils/setpriv.1.adoc
 setpriv_SOURCES = sys-utils/setpriv.c \
 		  lib/caputils.c
+dist_noinst_HEADERS += sys-utils/setpriv-landlock.h
+if HAVE_LINUX_LANDLOCK_H
+setpriv_SOURCES += sys-utils/setpriv-landlock.c
+endif
 setpriv_LDADD = $(LDADD) -lcap-ng libcommon.la
 endif

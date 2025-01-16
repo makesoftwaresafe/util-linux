@@ -80,16 +80,11 @@ static void crank_random(void)
 
 int random_get_fd(void)
 {
-	int i, fd;
+	int fd;
 
 	fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
 	if (fd == -1)
 		fd = open("/dev/random", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-	if (fd >= 0) {
-		i = fcntl(fd, F_GETFD);
-		if (i >= 0)
-			fcntl(fd, F_SETFD, i | FD_CLOEXEC);
-	}
 	crank_random();
 	return fd;
 }
@@ -196,7 +191,7 @@ const char *random_tell_source(void)
 	return _("getrandom() function");
 #else
 	size_t i;
-	static const char *random_sources[] = {
+	static const char *const random_sources[] = {
 		"/dev/urandom",
 		"/dev/random"
 	};

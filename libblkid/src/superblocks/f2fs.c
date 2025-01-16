@@ -67,14 +67,14 @@ static int f2fs_validate_checksum(blkid_probe pr, size_t sb_off,
 	if (csum_off + sizeof(uint32_t) > 4096)
 		return 0;
 
-	unsigned char *csum_data = blkid_probe_get_buffer(pr,
+	const unsigned char *csum_data = blkid_probe_get_buffer(pr,
 			sb_off + csum_off, sizeof(uint32_t));
 	if (!csum_data)
 		return 0;
 
 	uint32_t expected = le32_to_cpu(*(uint32_t *) csum_data);
 
-	unsigned char *csummed = blkid_probe_get_buffer(pr, sb_off, csum_off);
+	const unsigned char *csummed = blkid_probe_get_buffer(pr, sb_off, csum_off);
 	if (!csummed)
 		return 0;
 
@@ -85,7 +85,7 @@ static int f2fs_validate_checksum(blkid_probe pr, size_t sb_off,
 
 static int probe_f2fs(blkid_probe pr, const struct blkid_idmag *mag)
 {
-	struct f2fs_super_block *sb;
+	const struct f2fs_super_block *sb;
 	uint16_t vermaj, vermin;
 
 	sb = blkid_probe_get_sb(pr, mag, struct f2fs_super_block);
@@ -110,8 +110,10 @@ static int probe_f2fs(blkid_probe pr, const struct blkid_idmag *mag)
 	blkid_probe_set_uuid(pr, sb->uuid);
 	blkid_probe_sprintf_version(pr, "%u.%u", vermaj, vermin);
 	if (le32_to_cpu(sb->log_blocksize) < 32){
-		blkid_probe_set_fsblocksize(pr, 1U << le32_to_cpu(sb->log_blocksize));
-		blkid_probe_set_block_size(pr, 1U << le32_to_cpu(sb->log_blocksize));
+		uint32_t blocksize = 1U << le32_to_cpu(sb->log_blocksize);
+		blkid_probe_set_fsblocksize(pr, blocksize);
+		blkid_probe_set_block_size(pr, blocksize);
+		blkid_probe_set_fssize(pr, le64_to_cpu(sb->block_count) * blocksize);
 	}
 	return 0;
 }

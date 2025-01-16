@@ -55,7 +55,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -o, --offset <num>    offset for range operations, in bytes\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(23));
+	fprintf(out, USAGE_HELP_OPTIONS(23));
 
 	fputs(_("\nAvailable values for advice:\n"), out);
 	for (i = 0; i < ARRAY_SIZE(advices); i++) {
@@ -63,7 +63,7 @@ static void __attribute__((__noreturn__)) usage(void)
 			advices[i].name);
 	}
 
-	printf(USAGE_MAN_TAIL("fadvise(1)"));
+	fprintf(out, USAGE_MAN_TAIL("fadvise(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -93,9 +93,18 @@ int main(int argc, char ** argv)
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
 
-	while ((c = getopt_long (argc, argv, "a:d:hl:o:", longopts, NULL)) != -1) {
+	while ((c = getopt_long (argc, argv, "a:d:hl:o:V", longopts, NULL)) != -1) {
 		switch (c) {
 		case 'a':
+			advice = -1;
+			for (size_t i = 0; i < ARRAY_SIZE(advices); i++) {
+				if (strcmp(optarg, advices[i].name) == 0) {
+					advice = advices[i].num;
+					break;
+				}
+			}
+			if (advice == -1)
+				errx(EXIT_FAILURE, "invalid advice argument: '%s'", optarg);
 			break;
 		case 'd':
 			fd = strtos32_or_err(optarg,
@@ -144,10 +153,10 @@ int main(int argc, char ** argv)
 			   offset, len,
 			   advice);
 	if (rc != 0)
-		warn(_("failed to advise"));
+		warnx(_("failed to advise: %s"), strerror(rc));
 
 	if (do_close)
 		close(fd);
 
-	return rc;
+	return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

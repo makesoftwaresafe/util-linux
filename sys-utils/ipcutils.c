@@ -1,3 +1,14 @@
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 2012 Sami Kerola <kerolasa@iki.fi>
+ * Copyright (C) 2012-2023 Karel Zak <kzak@redhat.com>
+ */
 #include <inttypes.h>
 
 #include "c.h"
@@ -18,6 +29,8 @@
 
 int ipc_msg_get_limits(struct ipc_limits *lim)
 {
+	memset(lim, 0, sizeof(*lim));
+
 	if (access(_PATH_PROC_IPC_MSGMNI, F_OK) == 0 &&
 	    access(_PATH_PROC_IPC_MSGMNB, F_OK) == 0 &&
 	    access(_PATH_PROC_IPC_MSGMAX, F_OK) == 0) {

@@ -78,6 +78,9 @@ When specifying the _list_ argument, the string of option, equal sign (=), and _
 +
 The default list of columns may be extended if list is specified in the format +list (e.g., lscpu -p=+MHZ).
 
+*-r*, *--raw*::
+Produce output in its raw format. This option is only applicable for the *--extended*, *--parse*, and *--caches* outputs.
+
 *-s*, *--sysroot* _directory_::
 Gather CPU data for a Linux instance other than the instance from which the *lscpu* command is issued. The specified _directory_ is the system root of the Linux instance to be inspected.
 
@@ -94,7 +97,9 @@ Output all available columns. This option must be combined with either *--extend
 
 == BUGS
 
-The basic overview of CPU family, model, etc. is always based on the first CPU only.
+The basic overview of CPU models is based on heuristics, taking into account differences such as
+CPU model names and implementer IDs. In some (unusual) cases, CPUs may differentiate in flags or BogoMIPS,
+but these differences are ignored in the lscpu overview.
 
 Sometimes in Xen Dom0 the kernel reports wrong data.
 

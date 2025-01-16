@@ -140,13 +140,12 @@ struct script_control {
 	pid_t child;		/* child pid */
 	int childstatus;	/* child process exit value */
 
-	unsigned int
-	 append:1,		/* append output */
-	 rc_wanted:1,		/* return child exit value */
-	 flush:1,		/* flush after each write */
-	 quiet:1,		/* suppress most output */
-	 force:1,		/* write output to links */
-	 isterm:1;		/* is child process running as terminal */
+	bool	append,		/* append output */
+		rc_wanted,	/* return child exit value */
+		flush,		/* flush after each write */
+		quiet,		/* suppress most output */
+		force,		/* write output to links */
+		isterm;		/* is child process running as terminal */
 };
 
 static ssize_t log_info(struct script_control *ctl, const char *name, const char *msgfmt, ...)
@@ -216,8 +215,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -q, --quiet                   be quiet\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(31));
-	printf(USAGE_MAN_TAIL("script(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(31));
+	fprintf(out, USAGE_MAN_TAIL("script(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -260,8 +259,8 @@ static struct script_log *log_associate(struct script_control *ctl,
 	}
 
 	/* add log to the stream */
-	stream->logs = xrealloc(stream->logs,
-			(stream->nlogs + 1) * sizeof(log));
+	stream->logs = xreallocarray(stream->logs,
+			stream->nlogs + 1, sizeof(log));
 	stream->logs[stream->nlogs] = log;
 	stream->nlogs++;
 

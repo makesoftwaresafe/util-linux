@@ -85,9 +85,9 @@ struct uuidd_options_t {
 	const char	 *socket_path;
 	uuidd_prot_num_t num;
 	uuidd_prot_op_t	 do_type;
-	unsigned int	 do_kill:1,
-			 no_pid:1,
-			 s_flag:1;
+	bool		 do_kill,
+			 no_pid,
+			 s_flag;
 };
 
 static void __attribute__((__noreturn__)) usage(void)
@@ -113,8 +113,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -d, --debug             run in debugging mode\n"), out);
 	fputs(_(" -q, --quiet             turn on quiet mode\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(25));
-	printf(USAGE_MAN_TAIL("uuidd(8)"));
+	fprintf(out, USAGE_HELP_OPTIONS(25));
+	fprintf(out, USAGE_MAN_TAIL("uuidd(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -338,7 +338,7 @@ static void timeout_handler(int sig __attribute__((__unused__)),
 #ifdef HAVE_TIMER_CREATE
 	if (info->si_code == SI_TIMER)
 #endif
-		errx(EXIT_FAILURE, _("timed out"));
+		ul_sig_err(EXIT_FAILURE, "timed out");
 }
 
 static void server_loop(const char *socket_path, const char *pidfile_path,
@@ -441,15 +441,6 @@ static void server_loop(const char *socket_path, const char *pidfile_path,
 	pfd[POLLFD_SIGNAL].fd = sigfd;
 	pfd[POLLFD_SOCKET].fd = s;
 	pfd[POLLFD_SIGNAL].events = pfd[POLLFD_SOCKET].events = POLLIN | POLLERR | POLLHUP;
-
-	num = 1;
-	if (uuidd_cxt->cont_clock_offset) {
-		/* trigger initialization */
-		(void) __uuid_generate_time_cont(uu, &num, uuidd_cxt->cont_clock_offset);
-		if (uuidd_cxt->debug)
-			fprintf(stderr, _("max_clock_offset = %u sec\n"),
-				uuidd_cxt->cont_clock_offset);
-	}
 
 	while (1) {
 		ret = poll(pfd, ARRAY_SIZE(pfd),
@@ -725,7 +716,7 @@ int main(int argc, char **argv)
 
 	parse_options(argc, argv, &uuidd_cxt, &uuidd_opts);
 
-	if (strlen(uuidd_opts.socket_path) >= sizeof(((struct sockaddr_un *)0)->sun_path))
+	if (strlen(uuidd_opts.socket_path) >= sizeof_member(struct sockaddr_un, sun_path))
 		errx(EXIT_FAILURE, _("socket name too long: %s"), uuidd_opts.socket_path);
 
 	if (!uuidd_opts.no_pid && !uuidd_opts.pidfile_path)

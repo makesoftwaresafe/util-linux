@@ -18,7 +18,7 @@ fadvise - utility to use the posix_fadvise system call
 
 == DESCRIPTION
 
-*fadvise* is a simple command wrapping posix_fadvise system call
+*fadvise* is a simple command wrapping *posix_fadvise*(2) system call
 that is for predeclaring an access pattern for file data.
 
 == OPTIONS
@@ -38,6 +38,17 @@ If this option is omitted, 0 is used as default advice.
 *-l*, *--length* _length_::
 Specifies the length of the range, in bytes.
 If this option is omitted, 0 is used as default advice.
+
+include::man-common/help-version.adoc[]
+
+== EXIT STATUS
+
+*fadvise* has the following exit status values:
+
+*0*::
+success
+*1*::
+unspecified failure
 
 == AUTHORS
 
