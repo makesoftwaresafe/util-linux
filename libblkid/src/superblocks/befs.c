@@ -122,7 +122,7 @@ struct bplustree_node {
 	char		name[0];
 } __attribute__((packed));
 
-static unsigned char *get_block_run(blkid_probe pr, const struct befs_super_block *bs,
+static const unsigned char *get_block_run(blkid_probe pr, const struct befs_super_block *bs,
 					const struct block_run *br, int fs_le)
 {
 	return blkid_probe_get_buffer(pr,
@@ -135,7 +135,7 @@ static unsigned char *get_block_run(blkid_probe pr, const struct befs_super_bloc
 					<< FS32_TO_CPU(bs->block_shift, fs_le));
 }
 
-static unsigned char *get_custom_block_run(blkid_probe pr,
+static const unsigned char *get_custom_block_run(blkid_probe pr,
 				const struct befs_super_block *bs,
 				const struct block_run *br,
 				int64_t offset, uint32_t length, int fs_le)
@@ -154,7 +154,7 @@ static unsigned char *get_custom_block_run(blkid_probe pr,
 			length);
 }
 
-static unsigned char *get_tree_node(blkid_probe pr, const struct befs_super_block *bs,
+static const unsigned char *get_tree_node(blkid_probe pr, const struct befs_super_block *bs,
 				const struct data_stream *ds,
 				int64_t start, uint32_t length, int fs_le)
 {
@@ -500,6 +500,9 @@ static int probe_befs(blkid_probe pr, const struct blkid_idmag *mag)
 
 	if (block_shift < 10 || block_shift > 13 ||
 	    block_size != 1U << block_shift)
+		return BLKID_PROBE_NONE;
+
+	if (FS32_TO_CPU(bs->ag_shift, fs_le) > 64)
 		return BLKID_PROBE_NONE;
 
 	ret = get_uuid(pr, bs, &volume_id, fs_le);

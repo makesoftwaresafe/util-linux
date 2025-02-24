@@ -80,13 +80,13 @@ struct file_attribute {
 
 static int __probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag, int save_info)
 {
-	struct ntfs_super_block *ns;
-	struct master_file_table_record *mft;
+	const struct ntfs_super_block *ns;
+	const struct master_file_table_record *mft;
 
 	uint32_t sectors_per_cluster, mft_record_size;
 	uint16_t sector_size;
 	uint64_t nr_clusters, off, attr_off;
-	unsigned char *buf_mft;
+	const unsigned char *buf_mft;
 
 	ns = blkid_probe_get_sb(pr, mag, struct ntfs_super_block);
 	if (!ns)
@@ -97,7 +97,7 @@ static int __probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag, int save_
 	 */
 	sector_size = le16_to_cpu(ns->bpb.sector_size);
 
-	if (sector_size < 256 || sector_size > 4096)
+	if (sector_size < 256 || sector_size > 4096 || !is_power_of_2(sector_size))
 		return 1;
 
 	switch (ns->bpb.sectors_per_cluster) {
@@ -218,6 +218,7 @@ static int __probe_ntfs(blkid_probe pr, const struct blkid_idmag *mag, int save_
 
 	blkid_probe_set_fsblocksize(pr, sector_size * sectors_per_cluster);
 	blkid_probe_set_block_size(pr, sector_size);
+	blkid_probe_set_fssize(pr, le64_to_cpu(ns->number_of_sectors) * sector_size);
 
 	blkid_probe_sprintf_uuid(pr,
 			(unsigned char *) &ns->volume_serial,

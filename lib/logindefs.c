@@ -254,14 +254,13 @@ static void load_defaults(void)
 	if (file != NULL)
 	        free_getlogindefs_data();
 
-	error = econf_readDirs(&file,
-#if USE_VENDORDIR
-			_PATH_VENDORDIR,
+#ifdef HAVE_ECONF_READCONFIG
+	error = econf_readConfig(&file, NULL,
+			UL_VENDORDIR_PATH, "login", "defs", "= \t", "#");
 #else
-			NULL,
+	error = econf_readDirs(&file,
+			UL_VENDORDIR_PATH, "/etc", "login", "defs", "= \t", "#");
 #endif
-			"/etc", "login", "defs", "= \t", "#");
-
 	if (error)
 	  syslog(LOG_NOTICE, _("Error reading login.defs: %s"),
 		 econf_errString(error));
@@ -468,7 +467,7 @@ int effective_access(const char *path, int mode)
  * BSD setreuid().
  */
 
-int get_hushlogin_status(struct passwd *pwd, int force_check)
+int get_hushlogin_status(struct passwd *pwd, const char *override_home, int force_check)
 {
 	const char *files[] = { _PATH_HUSHLOGINS, _PATH_HUSHLOGIN, NULL };
 	const char *file;
@@ -521,7 +520,7 @@ int get_hushlogin_status(struct passwd *pwd, int force_check)
 		if (strlen(pwd->pw_dir) + strlen(file) + 2 > sizeof(buf))
 			continue;
 
-		if (snprintf(buf, sizeof(buf), "%s/%s", pwd->pw_dir, file) < 0)
+		if (snprintf(buf, sizeof(buf), "%s/%s", override_home ?: pwd->pw_dir, file) < 0)
 			continue;
 
 		if (force_check) {

@@ -22,7 +22,7 @@ ts_init "$*"
 
 ts_check_test_command "$TS_CMD_LSFD"
 ts_check_test_command "$TS_HELPER_MKFDS"
-ts_skip_qemu_user
+ts_check_native_byteorder
 
 ts_cd "$TS_OUTDIR"
 
@@ -34,17 +34,17 @@ EXPR='(TYPE == "TCP") and (FD >= 3) and (FD <= 5)'
 
 {
     coproc MKFDS { "$TS_HELPER_MKFDS" tcp $FDS $FDC $FDA \
-				      server-port=34567 \
-				      client-port=23456 ; }
+				      server-port=56789 \
+				      client-port=45678 ; }
     if read -r -u "${MKFDS[0]}" PID; then
 	${TS_CMD_LSFD} -n \
 		       -o ASSOC,TYPE,STTYPE,NAME,SOCK.STATE,SOCK.TYPE,SOCK.LISTENING,INET.LADDR,INET.RADDR,TCP.LADDR,TCP.LPORT,TCP.RADDR,TCP.RPORT \
 		       -p "${PID}" -Q "${EXPR}"
 	echo 'ASSOC,TYPE,STTYPE,NAME,SOCK.STATE,SOCK.TYPE,SOCK.LISTENING,INET.LADDR,INET.RADDR,TCP.LADDR,TCP.LPORT,TCP.RADDR,TCP.RPORT': $?
 
-	kill -CONT "${PID}"
-	wait "${MKFDS_PID}"
+	echo DONE >&"${MKFDS[1]}"
     fi
+    wait "${MKFDS_PID}"
 } > "$TS_OUTPUT" 2>&1
 
 ts_finalize

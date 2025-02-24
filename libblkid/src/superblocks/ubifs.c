@@ -105,7 +105,7 @@ static int ubifs_verify_csum(blkid_probe pr, const struct ubifs_sb_node *sb)
 
 static int probe_ubifs(blkid_probe pr, const struct blkid_idmag *mag)
 {
-	struct ubifs_sb_node *sb;
+	const struct ubifs_sb_node *sb;
 
 	sb = blkid_probe_get_sb(pr, mag, struct ubifs_sb_node);
 	if (!sb)
@@ -118,6 +118,9 @@ static int probe_ubifs(blkid_probe pr, const struct blkid_idmag *mag)
 	blkid_probe_sprintf_version(pr, "w%dr%d",
 			le32_to_cpu(sb->fmt_version),
 			le32_to_cpu(sb->ro_compat_version));
+	blkid_probe_set_fssize(pr,
+			(uint64_t) le32_to_cpu(sb->leb_size)
+			* le32_to_cpu(sb->leb_cnt));
 	return 0;
 }
 

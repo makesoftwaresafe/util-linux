@@ -17,8 +17,8 @@
 #include "superblocks.h"
 
 #define JM_SIGNATURE		"JM"
-#define JM_MINOR_VERSION(_x)	((_x)->version & 0xFF)
-#define JM_MAJOR_VERSION(_x)	((_x)->version >> 8)
+#define JM_MINOR_VERSION(_x)	(le16_to_cpu((_x)->version) & 0xFF)
+#define JM_MAJOR_VERSION(_x)	(le16_to_cpu((_x)->version) >> 8)
 #define JM_SPARES		2
 #define JM_MEMBERS		8
 
@@ -51,52 +51,30 @@ struct jm_metadata {
 	uint8_t		filler2[0x20];
 } __attribute__ ((packed));
 
-static void jm_to_cpu(struct jm_metadata *jm)
+static int jm_checksum(blkid_probe pr, const struct jm_metadata *jm)
 {
-	unsigned int i;
+	size_t count = sizeof(*jm) / sizeof(uint16_t);
+	uint16_t sum = 0;
+	unsigned char *ptr = (unsigned char *) jm;
 
-	jm->version = le16_to_cpu(jm->version);
-	jm->checksum = le16_to_cpu(jm->checksum);
-	jm->identity = le32_to_cpu(jm->identity);
-	jm->segment.base = le32_to_cpu(jm->segment.base);
-	jm->segment.range = le32_to_cpu(jm->segment.range);
-	jm->segment.range2 = le16_to_cpu(jm->segment.range2);
+	while (count--) {
+		uint16_t val;
 
-	jm->attribute = le16_to_cpu(jm->attribute);
+		memcpy(&val, ptr, sizeof(uint16_t));
+		sum += le16_to_cpu(val);
 
-	for (i = 0; i < JM_SPARES; i++)
-		jm->spare[i] = le32_to_cpu(jm->spare[i]);
+		ptr += sizeof(uint16_t);
+	}
 
-	for (i = 0; i < JM_MEMBERS; i++)
-		jm->member[i] = le32_to_cpu(jm->member[i]);
-}
-
-static int jm_checksum(const struct jm_metadata *jm)
-{
-        size_t count = sizeof(*jm) / sizeof(uint16_t);
-        uint16_t sum = 0;
-        unsigned char *ptr = (unsigned char *) jm;
-
-        while (count--) {
-                uint16_t val;
-
-                memcpy(&val, ptr, sizeof(uint16_t));
-                sum += le16_to_cpu(val);
-
-                ptr += sizeof(uint16_t);
-        }
-
-        return sum == 0 || sum == 1;
+	return blkid_probe_verify_csum(pr, sum == 0 || sum == 1, 1);
 }
 
 static int probe_jmraid(blkid_probe pr,
 		const struct blkid_idmag *mag __attribute__((__unused__)))
 {
 	uint64_t off;
-	struct jm_metadata *jm;
+	const struct jm_metadata *jm;
 
-	if (pr->size < 0x10000)
-		return 1;
 	if (!S_ISREG(pr->mode) && !blkid_probe_is_wholedisk(pr))
 		return 1;
 
@@ -111,10 +89,8 @@ static int probe_jmraid(blkid_probe pr,
 	if (memcmp(jm->signature, JM_SIGNATURE, sizeof(JM_SIGNATURE) - 1) != 0)
 		return 1;
 
-	if (!jm_checksum(jm))
+	if (!jm_checksum(pr, jm))
 		return 1;
-
-	jm_to_cpu(jm);
 
 	if (jm->mode > 5)
 		return 1;
@@ -131,6 +107,7 @@ static int probe_jmraid(blkid_probe pr,
 const struct blkid_idinfo jmraid_idinfo = {
 	.name		= "jmicron_raid_member",
 	.usage		= BLKID_USAGE_RAID,
+	.minsz		= 0x10000,
 	.probefunc	= probe_jmraid,
 	.magics		= BLKID_NONE_MAGIC
 };

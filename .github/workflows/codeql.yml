@@ -32,13 +32,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
           queries: +security-extended,security-and-quality
+          config: |
+            query-filters:
+            - exclude:
+                id: cpp/path-injection
+            - exclude:
+                id: cpp/uncontrolled-process-operation
+            - exclude:
+                id: cpp/world-writable-file-creation
 
       - name: Install dependencies
         run: sudo -E .github/workflows/cibuild-setup-ubuntu.sh
@@ -46,7 +54,7 @@ jobs:
           COMPILER: gcc
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
+        uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3

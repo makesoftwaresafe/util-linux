@@ -47,21 +47,8 @@
 #include "c.h"
 #include "closestream.h"
 #include "monotonic.h"
-
-/* exit() status if discard unsupported by device */
-#define BLKDISCARD_EXIT_NOTSUPP		(EXIT_FAILURE + 1)
-
-#ifndef BLKDISCARD
-# define BLKDISCARD	_IO(0x12,119)
-#endif
-
-#ifndef BLKSECDISCARD
-# define BLKSECDISCARD	_IO(0x12,125)
-#endif
-
-#ifndef BLKZEROOUT
-# define BLKZEROOUT	_IO(0x12,127)
-#endif
+#include "exitcodes.h"
+#include "blkdev.h"
 
 enum {
 	ACT_DISCARD = 0,	/* default */
@@ -107,12 +94,12 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -z, --zeroout       zero-fill rather than discard\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(21));
+	fprintf(out, USAGE_HELP_OPTIONS(21));
 
 	fputs(USAGE_ARGUMENTS, out);
-	printf(USAGE_ARG_SIZE(_("<num>")));
+	fprintf(out, USAGE_ARG_SIZE(_("<num>")));
 
-	printf(USAGE_MAN_TAIL("blkdiscard(8)"));
+	fprintf(out, USAGE_MAN_TAIL("blkdiscard(8)"));
 	exit(EXIT_SUCCESS);
 }
 
@@ -159,7 +146,7 @@ static void __attribute__((__noreturn__)) err_on_ioctl(
 			const char *ioctlname, const char *path)
 {
 	int exno = errno == EOPNOTSUPP ?
-			BLKDISCARD_EXIT_NOTSUPP : EXIT_FAILURE;
+			EXIT_NOTSUPP : EXIT_FAILURE;
 
 	err(exno, _("%s: %s ioctl failed"), ioctlname, path);
 }

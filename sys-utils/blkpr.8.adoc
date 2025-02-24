@@ -8,7 +8,7 @@
 
 == NAME
 
-blkpr - run persistent reservations command on a device
+blkpr - run a persistent-reservations command on a device
 
 == SYNOPSIS
 
@@ -16,15 +16,16 @@ blkpr - run persistent reservations command on a device
 
 == DESCRIPTION
 
-*blkpr* is used to run persistent reservations command on device that supports Persistent Reservations feature.
+*blkpr* is used to run a persistent-reservations command on a device
+that supports the Persistent Reservations feature.
 
 The _device_ argument is the pathname of the block device.
 
 == OPTIONS
 
 *-c*, *--command* _command_::
-The command of persistent reservations, supported commands are *register*, *reserve*, *release*, *preempt*,
-*preempt-abort*, and *clear*.
+The command for managing persistent reservations. Supported commands are:
+*register*, *reserve*, *release*, *preempt*, *preempt-abort*, and *clear*.
 
 *-k*, *--key* _key_::
 The key the command should operate on.
@@ -53,7 +54,7 @@ mailto:pizhenwei@bytedance.com[zhenwei pi]
 
 *sg_persist*(8)
 
-Linux documentation at: <https://www.kernel.org/doc/Documentation/block/pr.txt>
+Linux documentation at: <https://docs.kernel.org/block/pr.html>
 iSCSI specification at: <https://datatracker.ietf.org/doc/html/rfc3720>
 NVMe-oF specification at: <https://nvmexpress.org/nvme-over-fabrics-part-two/>
 

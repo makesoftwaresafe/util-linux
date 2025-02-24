@@ -11,7 +11,7 @@ configure_file(
   output : 'libfdisk.h',
   configuration : defs,
   install : build_libfdisk,
-  install_dir : join_paths(get_option('includedir'), 'libfdisk'),
+  install_dir : get_option('includedir') / 'libfdisk',
 )
 
 lib_fdisk_sources = '''
@@ -56,25 +56,19 @@ lib__fdisk = static_library(
   include_directories : lib_fdisk_includes,
   dependencies : build_libfdisk ? [] : disabler())
 
-lib_fdisk_static = static_library(
-  'fdisk_static',
-  link_whole : lib__fdisk,
-  link_with : [lib_common,
-               lib_blkid.get_static_lib(),
-               lib_uuid.get_static_lib()],
-  install : false)
-
-lib_fdisk = library(
+lib_fdisk = both_libraries(
   'fdisk',
   link_whole : lib__fdisk,
   link_depends : libfdisk_sym,
   version : libfdisk_version,
   link_args : ['-Wl,--version-script=@0@'.format(libfdisk_sym_path)],
   link_with : [lib_common,
-               lib_blkid,
                lib_uuid],
+  dependencies : [blkid_dep],
   install : build_libfdisk)
 fdisk_dep = declare_dependency(link_with: lib_fdisk, include_directories: '.')
+
+lib_fdisk_static = lib_fdisk.get_static_lib()
 
 if build_libfdisk
   pkgconfig.generate(lib_fdisk,

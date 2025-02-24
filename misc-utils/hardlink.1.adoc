@@ -18,7 +18,7 @@ hardlink - link multiple copies of a file
 
 == SYNOPSIS
 
-*hardlink* [options] [_directory_|_file_]...
+*hardlink* [options] _directory_|_file_...
 
 == DESCRIPTION
 
@@ -42,7 +42,7 @@ are very often different from the beginning.
 
 include::man-common/help-version.adoc[]
 
-*-c* *--content*::
+*-c*, *--content*::
 Consider only file content, not attributes, when determining whether two files are equal. Same as *-pot*.
 
 *-b*, *--io-size* _size_::
@@ -55,10 +55,14 @@ way and I/O operation is done in the kernel. The size may be altered on the fly
 to fit a number of cached content checksums.
 
 *-d*, *--respect-dir*::
-Only try to link files with the same directory name. The top-level directory (as specified on the hardlink command line) is ignored. For example, *hardlink --respect-dir /foo /bar* will link /foo/some/file with /bar/some/file, but not /bar/other/file. If combined with *--respect-name*, then entire paths (except the top-level directory) are compared.
+Only try to link files with the same directory name. The top-level directory (as specified on the *hardlink* command line) is ignored. For example, *hardlink --respect-dir /foo /bar* will link _/foo/some/file_ with _/bar/some/file_, but not _/bar/other/file_. If combined with *--respect-name*, then entire paths (except the top-level directory) are compared.
 
 *-f*, *--respect-name*::
 Only try to link files with the same (base)name. It's strongly recommended to use long options rather than *-f* which is interpreted in a different way by other *hardlink* implementations.
+
+*-F*, *--prioritize-trees*::
+Keep files found in the earliest specified top-level directory if there are multiple identical files in different trees.
+For example, *hardlink foo/ bar/* will link files in bar/ to equal files in the foo/ directory.
 
 *-i*, *--include* _regex_::
 A regular expression to include files. If the option *--exclude* has been given, this option re-includes files which would otherwise be excluded. If the option is used without *--exclude*, only files matched by the pattern are included.
@@ -71,6 +75,12 @@ Among equal files, keep the file with the lowest link count.
 
 *-n*, *--dry-run*::
 Do not act, just print what would happen.
+
+*-l*, *--list-duplicates*::
+Don't link anything, but list the absolute path of every duplicate file, one per line, preceded by a unique 16-byte discriminator and a tab.
+
+*-z*, *--zero*::
+Separate lines with a NUL instead of a newline in *-l* mode.
 
 *-o*, *--ignore-owner*::
 Link and compare files even if their owner information (user and group) differs. Results may be unpredictable.
@@ -103,7 +113,13 @@ Link and compare files even if their time of modification is different. This is 
 Verbose output, explain to the user what is being done. If specified once, every hardlinked file is displayed. If specified twice, it also shows every comparison.
 
 *-x*, *--exclude* _regex_::
-A regular expression which excludes files from being compared and linked.
+A regular expression that excludes files from being compared and linked. This option can be used multiple times.
+
+*--exclude-subtree* _regex_::
+A regular expression that excludes entire directories from being compared and linked. This option can also be used multiple times.
+
+*--mount*::
+Do not traverse directories on different filesystems (remain within the same filesystem).
 
 *-X*, *--respect-xattrs*::
 Only try to link files with the same extended attributes.
@@ -115,7 +131,7 @@ Crypto API is not available. The methods based on checksums are implemented in
 zero-copy way, in this case file contents are not copied to the userspace and all
 calculation is done in kernel.
 
-*--reflink*[=_when_]::
+*--reflink*[**=**_when_]::
 Create copy-on-write clones (aka reflinks) rather than hardlinks. The reflinked files
 share only on-disk data, but the file mode and owner can be different. It's recommended
 to use it with *--ignore-owner* and *--ignore-mode* options. This option implies

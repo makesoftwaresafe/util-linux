@@ -20,9 +20,12 @@ TS_DESC="netns associated with a fd"
 . "$TS_TOPDIR"/functions.sh
 ts_init "$*"
 ts_skip_nonroot
+ts_skip_docker
 
+. "$TS_SELF/lsfd-functions.bash"
 ts_check_test_command "$TS_CMD_LSFD"
 ts_check_test_command "$TS_HELPER_MKFDS"
+lsfd_check_mkfds_factory netns
 
 ts_cd "$TS_OUTDIR"
 
@@ -41,18 +44,30 @@ INO_NS=
 	INO_FD=$( "${TS_CMD_LSFD}" -n -oINODE   -p "${PID}" -Q "(FD == $FD)")
 	INO_NS=$( "${TS_CMD_LSFD}" -n -oINODE   -p "${PID}" -Q '(ASSOC == "net")')
 
-	[[ "$NAME_FD" = "$NAME_NS" ]]
-	echo "$NAME_FD" == "$NAME_NS": $?
+	if [[ "$NAME_FD" = "$NAME_NS" ]]; then
+	    echo "NAME_FD" == "NAME_NS": $?
+	else
+	    echo "NAME_FD: $NAME_FD" == "NAME_NS: $NAME_NS": $?
+	fi
 
-	[[ "$NAME_FD" = "net:[$INO_FD]" ]]
-	echo "$NAME_FD" == "net:[$INO_FD]": $?
+	if [[ "$NAME_FD" = "net:[$INO_FD]" ]]; then
+	    echo "NAME_FD" == "net:[INO_FD]": $?
+	else
+	    echo "NAME_FD: $NAME_FD" == "net:[INO_FD: $INO_FD]": $?
+	fi
 
-	[[ "$NAME_FD" = "net:[$INO_NS]" ]]
-	echo "$NAME_FD" == "net:[$INO_NS]": $?
+	if [[ "$NAME_FD" = "net:[$INO_NS]" ]]; then
+	    echo "NAME_FD" == "net:[INO_NS]": $?
+	else
+	    echo "NAME_FD: $NAME_FD" == "net:[INO_NS: $INO_NS]": $?
+	fi
 
-	kill -CONT ${PID}
+	echo DONE >&"${MKFDS[1]}"
     fi
     wait "${MKFDS_PID}"
 } > "$TS_OUTPUT" 2>&1
+if [ "$?" == "$TS_EXIT_NOTSUPP" ]; then
+    ts_skip "ioctl(fd, SIOCGSKNS) is not available"
+fi
 
 ts_finalize
