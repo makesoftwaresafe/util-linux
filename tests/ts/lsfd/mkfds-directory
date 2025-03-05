@@ -20,6 +20,8 @@ TS_DESC="directory"
 . "$TS_TOPDIR"/functions.sh
 ts_init "$*"
 
+ts_skip_qemu_user
+
 ts_check_test_command "$TS_CMD_LSFD"
 ts_check_test_command "$TS_CMD_FINDMNT"
 ts_check_test_command "$TS_HELPER_MKFDS"
@@ -101,9 +103,9 @@ esac
 	    echo 'stat reports:' "$(stat -c %h /)"
 	fi
 
-	kill -CONT ${PID}
-	wait ${MKFDS_PID}
+	echo DONE >&"${MKFDS[1]}"
     fi
+    wait ${MKFDS_PID}
 } > $TS_OUTPUT 2>&1
 
 ts_finalize

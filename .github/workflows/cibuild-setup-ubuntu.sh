@@ -2,6 +2,10 @@
      
 set -ex
 
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get -y update --fix-missing
+
 # Xenial uses btrfs-tools, but since Focal it's btrfs-progs
 #
 PACKAGES=(
@@ -24,6 +28,12 @@ PACKAGES=(
 	squashfs-tools
 	iproute2
 	dmsetup
+	python3-dev
+	gawk
+	bison
+	flex
+	sqlite3
+	libsqlite3-dev
 )
 
 PACKAGES_OPTIONAL=(
@@ -33,10 +43,17 @@ PACKAGES_OPTIONAL=(
 
 # scsi_debug
 if [[ "$QEMU_USER" != "1" ]]; then
-	PACKAGES+=(linux-modules-extra-$(uname -r))
+	MODULES_PACKAGE="linux-modules-extra-$(uname -r)"
+	# may not exist anymore
+	if APT_CACHE_OUTPUT=$(apt-cache show "$MODULES_PACKAGE") && [[ -n "$APT_CACHE_OUTPUT" ]]; then
+		PACKAGES+=("$MODULES_PACKAGE")
+	fi
 fi
 
-apt-get -y update --fix-missing
+if [[ "$TRANSLATE_MANPAGES" == "yes" ]];then
+	PACKAGES+=(po4a)
+fi
+
 apt install -y lsb-release software-properties-common
 
 COMPILER="${COMPILER:?}"
@@ -47,7 +64,9 @@ bash -c "echo 'deb-src http://archive.ubuntu.com/ubuntu/ $RELEASE main restricte
 # cov-build fails to compile util-linux when CC is set to gcc-*
 # so let's just install and use the default compiler
 if [[ "$COMPILER_VERSION" == "" ]]; then
-    PACKAGES+=("$COMPILER")
+    if [[ "$COMPILER" != "none" ]]; then
+	PACKAGES+=("$COMPILER")
+    fi
 elif [[ "$COMPILER" == clang ]]; then
     # Latest LLVM stack deb packages provided by https://apt.llvm.org/
     # Following snippet was borrowed from https://apt.llvm.org/llvm.sh
@@ -62,6 +81,9 @@ elif [[ "$COMPILER" == gcc ]]; then
 else
     fatal "Unknown compiler: $COMPILER"
 fi
+
+# ASAN can crash with the new default of =32
+sysctl --write vm.mmap_rnd_bits=28
 
 
 apt-get -y update --fix-missing

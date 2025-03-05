@@ -18,6 +18,7 @@
  * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -45,8 +46,8 @@ struct taskset {
 	size_t		setsize;
 	char		*buf;		/* buffer for conversion from mask to string */
 	size_t		buflen;
-	unsigned int	use_list:1,	/* use list rather than masks */
-			get_only:1;	/* print the mask, but not modify */
+	bool		use_list,	/* use list rather than masks */
+			get_only;	/* print the mask, but not modify */
 };
 
 static void __attribute__((__noreturn__)) usage(void)
@@ -66,7 +67,7 @@ static void __attribute__((__noreturn__)) usage(void)
 		" -p, --pid               operate on existing given pid\n"
 		" -c, --cpu-list          display and specify cpus in list format\n"
 		));
-	printf(USAGE_HELP_OPTIONS(25));
+	fprintf(out, USAGE_HELP_OPTIONS(25));
 
 	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, _(
@@ -82,7 +83,7 @@ static void __attribute__((__noreturn__)) usage(void)
 		"    e.g. 0-31:2 is equivalent to mask 0x55555555\n"),
 		program_invocation_short_name);
 
-	printf(USAGE_MAN_TAIL("taskset(1)"));
+	fprintf(out, USAGE_MAN_TAIL("taskset(1)"));
 	exit(EXIT_SUCCESS);
 }
 

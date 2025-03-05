@@ -1,6 +1,7 @@
 #
 # generic stuff
 #
+*.deps
 *.gcda
 *.gcno
 *.gcov
@@ -45,10 +46,16 @@ config/test-driver
 configure
 cscope.out
 depcomp
+errnos.h
+GPATH
+GRTAGS
+GTAGS
+GSYMS
 INSTALL
 install-sh
 libtool
 m4/*.m4
+m4/libtool.m4.orig
 Makefile
 Makefile.in
 missing
@@ -56,22 +63,22 @@ mkinstalldirs
 stamp-h
 stamp-h.in
 stamp-h1
+syscalls.h
 tags
 test-suite.log
+tests/failures
 tests/run.sh.log
 tests/run.sh.trs
 update.log
 ylwrap
-GPATH
-GRTAGS
-GTAGS
-GSYMS
 
 #
 # binaries
 #
 /addpart
 /agetty
+/bits
+/build*/
 /blkdiscard
 /blkid
 /blkpr
@@ -89,10 +96,13 @@ GSYMS
 /colcrt
 /colrm
 /column
+/coresched
 /ctrlaltdel
 /delpart
 /dmesg
 /eject
+/enosys
+/exch
 /fadvise
 /fallocate
 /fdformat
@@ -125,6 +135,7 @@ GSYMS
 /look
 /losetup
 /lsblk
+/lsclocks
 /lscpu
 /lsfd
 /lsipc
@@ -166,6 +177,7 @@ GSYMS
 /scriptlive
 /scriptreplay
 /setarch
+/setpgid
 /setpriv
 /setsid
 /setterm
@@ -188,10 +200,12 @@ GSYMS
 /uuidgen
 /uuidparse
 /vipw
+/waitpid
 /wall
 /wdctl
 /whereis
 /wipefs
 /write
 /zramctl
-/build*/
+/lsclocks
+/lastlog2

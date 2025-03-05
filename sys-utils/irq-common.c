@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ *
  * irq-common.c - functions to display kernel interrupt information.
  *
  * Copyright (C) 2019 zhenwei pi <pizhenwei@bytedance.com>
@@ -8,17 +10,7 @@
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
  */
-
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -241,7 +233,8 @@ static bool cpu_in_list(int cpu, size_t setsize, cpu_set_t *cpuset)
 /*
  * irqinfo - parse the system's interrupts
  */
-static struct irq_stat *get_irqinfo(int softirq, size_t setsize, cpu_set_t *cpuset)
+static struct irq_stat *get_irqinfo(const char *input_file, int softirq,
+				    size_t setsize, cpu_set_t *cpuset)
 {
 	FILE *irqfile;
 	char *line = NULL, *tmp;
@@ -255,18 +248,15 @@ static struct irq_stat *get_irqinfo(int softirq, size_t setsize, cpu_set_t *cpus
 	stat->irq_info = xmalloc(sizeof(*stat->irq_info) * IRQ_INFO_LEN);
 	stat->nr_irq_info = IRQ_INFO_LEN;
 
-	if (softirq)
-		irqfile = fopen(_PATH_PROC_SOFTIRQS, "r");
-	else
-		irqfile = fopen(_PATH_PROC_INTERRUPTS, "r");
+	irqfile = fopen(input_file, "r");
 	if (!irqfile) {
-		warn(_("cannot open %s"), _PATH_PROC_INTERRUPTS);
+		warn(_("cannot open %s"), input_file);
 		goto free_stat;
 	}
 
 	/* read header firstly */
 	if (getline(&line, &len, irqfile) < 0) {
-		warn(_("cannot read %s"), _PATH_PROC_INTERRUPTS);
+		warn(_("cannot read %s"), input_file);
 		goto close_file;
 	}
 
@@ -278,7 +268,7 @@ static struct irq_stat *get_irqinfo(int softirq, size_t setsize, cpu_set_t *cpus
 
 	stat->cpus =  xcalloc(stat->nr_active_cpu, sizeof(struct irq_cpu));
 
-	/* parse each line of _PATH_PROC_INTERRUPTS */
+	/* parse each line of input file */
 	while (getline(&line, &len, irqfile) >= 0) {
 		unsigned long count;
 		size_t index;
@@ -328,8 +318,8 @@ static struct irq_stat *get_irqinfo(int softirq, size_t setsize, cpu_set_t *cpus
 
 		if (stat->nr_irq == stat->nr_irq_info) {
 			stat->nr_irq_info *= 2;
-			stat->irq_info = xrealloc(stat->irq_info,
-						  sizeof(*stat->irq_info) * stat->nr_irq_info);
+			stat->irq_info = xreallocarray(stat->irq_info, stat->nr_irq_info,
+						       sizeof(*stat->irq_info));
 		}
 	}
 	fclose(irqfile);
@@ -369,18 +359,29 @@ static inline int cmp_name(const struct irq_info *a,
 	return strcoll(a->name, b->name);
 }
 
+static inline int cmp_ulong_descending(unsigned long a,
+		      unsigned long b)
+{
+	if (a == b)
+		return 0;
+	if (a < b)
+		return 1;
+	else
+		return -1;
+}
+
 static inline int cmp_total(const struct irq_info *a,
 		      const struct irq_info *b)
 {
-	return a->total < b->total;
+	int cmp = cmp_ulong_descending(a->total, b->total);
+	return cmp ? cmp : cmp_name(a, b);
 }
 
 static inline int cmp_delta(const struct irq_info *a,
 		      const struct irq_info *b)
 {
-	if (a->delta != b->delta)
-		return a->delta < b->delta;
-	return cmp_name(a, b);
+	int cmp = cmp_ulong_descending(a->delta, b->delta);
+	return cmp ? cmp : cmp_name(a, b);
 }
 
 static inline int cmp_interrupts(const struct irq_info *a,
@@ -489,12 +490,13 @@ struct libscols_table *get_scols_cpus_table(struct irq_output *out,
 
 	for (i = 0, j = 0; i < curr->nr_active_cpu; i++) {
 		struct irq_cpu *cpu = &curr->cpus[i];
-		char *str;
+		double usage;
 
 		if (!cpu_in_list(i, setsize, cpuset))
 			continue;
-		xasprintf(&str, "%0.1f", (double)((long double) cpu->total / (long double) curr->total_irq * 100.0));
-		if (str && scols_line_refer_data(ln, ++j, str) != 0)
+
+		usage = (long double) cpu->total / (long double) curr->total_irq * 100.0;
+		if (scols_line_sprintf(ln, ++j, "%0.1f", usage) != 0)
 			goto err;
 	}
 
@@ -506,14 +508,14 @@ struct libscols_table *get_scols_cpus_table(struct irq_output *out,
 
 	for (i = 0, j = 0; i < curr->nr_active_cpu; i++) {
 		struct irq_cpu *cpu = &curr->cpus[i];
-		char *str;
+		double usage;
 
 		if (!cpu_in_list(i, setsize, cpuset))
 			continue;
 		if (!curr->delta_irq)
 			continue;
-		xasprintf(&str, "%0.1f", (double)((long double) cpu->delta / (long double) curr->delta_irq * 100.0));
-		if (str && scols_line_refer_data(ln, ++j, str) != 0)
+		usage = (long double) cpu->delta / (long double) curr->delta_irq * 100.0;
+		if (scols_line_sprintf(ln, ++j, "%0.1f", usage) != 0)
 			goto err;
 	}
 
@@ -523,10 +525,12 @@ struct libscols_table *get_scols_cpus_table(struct irq_output *out,
 	return NULL;
 }
 
-struct libscols_table *get_scols_table(struct irq_output *out,
+struct libscols_table *get_scols_table(const char *input_file,
+					      struct irq_output *out,
 					      struct irq_stat *prev,
 					      struct irq_stat **xstat,
 					      int softirq,
+					      uintmax_t threshold,
 					      size_t setsize,
 					      cpu_set_t *cpuset)
 {
@@ -537,7 +541,7 @@ struct libscols_table *get_scols_table(struct irq_output *out,
 	size_t i;
 
 	/* the stats */
-	stat = get_irqinfo(softirq, setsize, cpuset);
+	stat = get_irqinfo(input_file, softirq, setsize, cpuset);
 	if (!stat)
 		return NULL;
 
@@ -565,7 +569,8 @@ struct libscols_table *get_scols_table(struct irq_output *out,
 	}
 
 	for (i = 0; i < stat->nr_irq; i++)
-		add_scols_line(out, &result[i], table);
+		if ((uintmax_t) result[i].total >= threshold)
+			add_scols_line(out, &result[i], table);
 
 	free(result);
 

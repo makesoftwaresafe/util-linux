@@ -58,6 +58,10 @@ endif
 if HAVE_ECONF
 agetty_LDADD += -leconf
 endif
+if HAVE_SYSTEMD
+agetty_LDADD += $(SYSTEMD_LIBS)
+agetty_CFLAGS = $(SYSTEMD_CFLAGS)
+endif
 endif # BUILD_AGETTY
 
 
@@ -98,13 +102,19 @@ dist_noinst_DATA += term-utils/wall.1.adoc
 wall_CFLAGS = $(SUID_CFLAGS) $(AM_CFLAGS)
 wall_LDFLAGS = $(SUID_LDFLAGS) $(AM_LDFLAGS)
 wall_LDADD = $(LDADD) libcommon.la
+if HAVE_SYSTEMD
+wall_LDADD += $(SYSTEMD_LIBS)
+wall_CFLAGS += $(SYSTEMD_CFLAGS)
+endif
 if USE_TTY_GROUP
 if MAKEINSTALL_DO_CHOWN
+if MAKEINSTALL_DO_TTY_SETGID
 install-exec-hook-wall::
 	chgrp tty $(DESTDIR)$(usrbin_execdir)/wall
 	chmod g+s $(DESTDIR)$(usrbin_execdir)/wall
 
 INSTALL_EXEC_HOOKS += install-exec-hook-wall
+endif
 endif
 endif
 endif # BUILD_WALL
@@ -118,14 +128,20 @@ write_SOURCES = term-utils/write.c
 write_CFLAGS = $(SUID_CFLAGS) $(AM_CFLAGS)
 write_LDFLAGS = $(SUID_LDFLAGS) $(AM_LDFLAGS)
 write_LDADD = $(LDADD) libcommon.la
+if HAVE_SYSTEMD
+write_LDADD += $(SYSTEMD_LIBS)
+write_CFLAGS += $(SYSTEMD_CFLAGS)
+endif
 
 if USE_TTY_GROUP
 if MAKEINSTALL_DO_CHOWN
+if MAKEINSTALL_DO_TTY_SETGID
 install-exec-hook-write::
 	chgrp tty $(DESTDIR)$(usrbin_execdir)/write
 	chmod g+s $(DESTDIR)$(usrbin_execdir)/write
 
 INSTALL_EXEC_HOOKS += install-exec-hook-write
+endif
 endif
 endif
 endif # BUILD_WRITE

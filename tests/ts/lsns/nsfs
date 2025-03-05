@@ -23,6 +23,7 @@ ts_init "$*"
 
 ts_skip_nonroot
 
+ts_check_enotty
 ts_check_test_command "$TS_CMD_LSNS"
 ts_check_test_command "$TS_CMD_MOUNT"
 ts_check_test_command "$TS_CMD_UMOUNT"
@@ -33,6 +34,13 @@ ts_check_prog "mkfifo"
 ts_check_prog "sed"
 
 grep -q '#define HAVE_LINUX_NET_NAMESPACE_H' ${top_builddir}/config.h || ts_skip "no netns support"
+
+if [ "$($TS_HELPER_SYSINFO ns-gettype-ok)" == "0" ]; then
+    ts_skip "NS_GET_NSTYPE ioctl cmd not available"
+fi
+if [ "$($TS_HELPER_SYSINFO ns-getuserns-ok)" == "0" ]; then
+    ts_skip "NS_GET_USERNS ioctl cmd not available"
+fi
 
 ts_cd "$TS_OUTDIR"
 

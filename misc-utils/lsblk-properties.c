@@ -38,6 +38,7 @@ void lsblk_device_free_properties(struct lsblk_devprop *p)
 	free(p->model);
 	free(p->partflags);
 	free(p->idlink);
+	free(p->revision);
 
 	free(p->mode);
 	free(p->owner);
@@ -67,6 +68,8 @@ static struct lsblk_devprop *get_properties_by_udev(struct lsblk_device *ld)
 
 	if (ld->udev_requested)
 		return ld->properties;
+
+	DBG(DEV, ul_debugobj(ld, " properties by udev"));
 
 	if (!udev)
 		udev = udev_new();	/* global handler */
@@ -129,6 +132,9 @@ static struct lsblk_devprop *get_properties_by_udev(struct lsblk_device *ld)
 		prop->serial = xstrdup(data);
 		normalize_whitespace((unsigned char *) prop->serial);
 	}
+
+	if ((data = udev_device_get_property_value(dev, "ID_REVISION")))
+		prop->revision = xstrdup(data);
 
 	if ((data = udev_device_get_property_value(dev, "ID_MODEL_ENC"))) {
 		prop->model = xstrdup(data);
@@ -210,6 +216,8 @@ static struct lsblk_devprop *get_properties_by_file(struct lsblk_device *ld)
 	if (ld->file_requested)
 		return ld->properties;
 
+	DBG(DEV, ul_debugobj(ld, " properties by file"));
+
 	if (ld->properties || ld->filename) {
 		lsblk_device_free_properties(ld->properties);
 		ld->properties = NULL;
@@ -254,6 +262,7 @@ static struct lsblk_devprop *get_properties_by_file(struct lsblk_device *ld)
 		else if (lookup(buf, "ID_SCSI_SERIAL", &prop->serial)) ;
 		else if (lookup(buf, "ID_SERIAL_SHORT", &prop->serial)) ;
 		else if (lookup(buf, "ID_SERIAL", &prop->serial)) ;
+		else if (lookup(buf, "ID_REVISION", &prop->revision)) ;
 
 		/* lsblk specific */
 		else if (lookup(buf, "MODE", &prop->mode)) ;
@@ -285,6 +294,8 @@ static struct lsblk_devprop *get_properties_by_blkid(struct lsblk_device *dev)
 		goto done;
 	if (getuid() != 0)
 		goto done;;				/* no permissions to read from the device */
+
+	DBG(DEV, ul_debugobj(dev, " properties by blkid"));
 
 	pr = blkid_new_probe_from_filename(dev->filename);
 	if (!pr)
@@ -339,18 +350,64 @@ done:
 	return dev->properties;
 }
 
+static int name2method(const char *name, size_t namesz)
+{
+	if (namesz == 4 && strncasecmp(name, "none", namesz) == 0)
+		return LSBLK_METHOD_NONE;
+	if (namesz == 4 && strncasecmp(name, "udev", namesz) == 0)
+		return LSBLK_METHOD_UDEV;
+	if (namesz == 5 && strncasecmp(name, "blkid", namesz) == 0)
+		return LSBLK_METHOD_BLKID;
+	if (namesz == 4 && strncasecmp(name, "file", namesz) == 0)
+		return LSBLK_METHOD_FILE;
+
+	warnx(_("unknown properties probing method: %s"), name);
+	return -1;
+}
+
+int lsblk_set_properties_method(const char *opts)
+{
+	size_t i;
+
+	for (i = 0; i < __LSBLK_NMETHODS; i++)
+		lsblk->properties_by[i] = LSBLK_METHOD_NONE;
+
+	if (string_to_idarray(opts, lsblk->properties_by,
+			__LSBLK_NMETHODS, name2method) < 0)
+		return -1;
+
+	return 0;
+}
+
 struct lsblk_devprop *lsblk_device_get_properties(struct lsblk_device *dev)
 {
-	struct lsblk_devprop *p = NULL;
+	size_t i;
 
 	DBG(DEV, ul_debugobj(dev, "%s: properties requested", dev->filename));
-	if (lsblk->sysroot)
-		return get_properties_by_file(dev);
 
-	p = get_properties_by_udev(dev);
-	if (!p)
-		p = get_properties_by_blkid(dev);
-	return p;
+	for (i = 0; i < __LSBLK_NMETHODS; i++) {
+		struct lsblk_devprop *p = NULL;
+
+		switch (lsblk->properties_by[i]) {
+		case LSBLK_METHOD_NONE:
+			return NULL;
+		case LSBLK_METHOD_UDEV:
+			p = get_properties_by_udev(dev);
+			break;
+		case LSBLK_METHOD_BLKID:
+			p = get_properties_by_blkid(dev);
+			break;
+		case LSBLK_METHOD_FILE:
+			if (lsblk->sysroot)
+				return get_properties_by_file(dev);
+			break;
+		}
+
+		if (p)
+			return p;
+	}
+
+	return NULL;
 }
 
 void lsblk_properties_deinit(void)

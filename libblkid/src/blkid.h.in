@@ -333,6 +333,8 @@ extern unsigned long blkid_topology_get_physical_sector_size(blkid_topology tp)
 			__ul_attribute__((nonnull));
 extern unsigned long blkid_topology_get_dax(blkid_topology tp)
 			__ul_attribute__((nonnull));
+extern uint64_t blkid_topology_get_diskseq(blkid_topology tp)
+			__ul_attribute__((nonnull));
 
 /*
  * partitions probing
@@ -421,7 +423,7 @@ extern int blkid_do_fullprobe(blkid_probe pr)
 /**
  * BLKID_PROBE_OK:
  *
- * probing return value; superblock (RAID, partiton table, ...) succesfully detected
+ * probing return value; superblock (RAID, partition table, ...) successfully detected
  */
 #define BLKID_PROBE_OK	0
 /**
@@ -440,7 +442,7 @@ extern int blkid_do_fullprobe(blkid_probe pr)
  * BLKID_PROBE_AMBIGUOUS:
  *
  * probing return value; more than one probing result, in this case, it's not
- * safe to use the device automaticaly and user intervention is recommended
+ * safe to use the device automatically and user intervention is recommended
  */
 #define BLKID_PROBE_AMBIGUOUS	-2
 
@@ -455,6 +457,8 @@ extern int blkid_probe_lookup_value(blkid_probe pr, const char *name,
 extern int blkid_probe_has_value(blkid_probe pr, const char *name)
 			__ul_attribute__((nonnull));
 extern int blkid_do_wipe(blkid_probe pr, int dryrun)
+			__ul_attribute__((nonnull));
+extern int blkid_wipe_all(blkid_probe pr)
 			__ul_attribute__((nonnull));
 extern int blkid_probe_step_back(blkid_probe pr)
 			__ul_attribute__((nonnull));

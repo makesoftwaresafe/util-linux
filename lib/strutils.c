@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <strings.h>
 #include <assert.h>
 
 #include "c.h"
@@ -396,7 +397,7 @@ int ul_strtou32(const char *str, uint32_t *num, int base)
  * Convert strings to numbers in defined range and print message on error.
  *
  * These functions are used when we read input from users (getopt() etc.). It's
- * better to consolidate the code and keep it all based on 64-bit numbers then
+ * better to consolidate the code and keep it all based on 64-bit numbers than
  * implement it for 32 and 16-bit numbers too.
  */
 int64_t str2num_or_err(const char *str, int base, const char *errmesg,
@@ -455,21 +456,28 @@ err:
 	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
 }
 
-long double strtold_or_err(const char *str, const char *errmesg)
+int ul_strtold(const char *str, long double *num)
 {
-	double num;
 	char *end = NULL;
 
 	errno = 0;
 	if (str == NULL || *str == '\0')
-		goto err;
-	num = strtold(str, &end);
+		return -(errno = EINVAL);
+	*num = strtold(str, &end);
 
-	if (errno || str == end || (end && *end))
-		goto err;
+	if (errno != 0)
+		return -errno;
+	if (str == end || (end && *end))
+		return -(errno = EINVAL);
+	return 0;
+}
 
-	return num;
-err:
+long double strtold_or_err(const char *str, const char *errmesg)
+{
+	long double num = 0;
+
+	if (ul_strtold(str, &num) == 0)
+		return num;
 	if (errno == ERANGE)
 		err(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, str);
 
@@ -499,12 +507,35 @@ void strtotimeval_or_err(const char *str, struct timeval *tv, const char *errmes
 	tv->tv_usec = (suseconds_t)((user_input - tv->tv_sec) * 1000000);
 }
 
+void strtotimespec_or_err(const char *str, struct timespec *ts, const char *errmesg)
+{
+	long double user_input;
+
+	user_input = strtold_or_err(str, errmesg);
+	ts->tv_sec = (time_t) user_input;
+	ts->tv_nsec = (long)((user_input - ts->tv_sec) * 1000000000);
+}
+
 time_t strtotime_or_err(const char *str, const char *errmesg)
 {
 	int64_t user_input;
 
 	user_input = strtos64_or_err(str, errmesg);
 	return (time_t) user_input;
+}
+
+bool hyperlinkwanted_or_err(const char *mode, const char *errmesg)
+{
+	if (mode && strcmp(mode, "never") == 0)
+		return false;
+
+	if (mode && strcmp(mode, "always") == 0)
+		return true;
+
+	if (!mode || strcmp(mode, "auto") == 0)
+		return isatty(STDOUT_FILENO) ? true : false;
+
+	errx(EXIT_FAILURE, "%s: '%s'", errmesg, mode);
 }
 
 /*
@@ -902,7 +933,7 @@ int streq_paths(const char *a, const char *b)
 		if (a_sz + b_sz == 0)
 			return 1;
 
-		/* ignore tailing slash */
+		/* ignore trailing slash */
 		if (a_sz + b_sz == 1 &&
 		    ((a_seg && *a_seg == '/') || (b_seg && *b_seg == '/')))
 			return 1;
@@ -998,6 +1029,34 @@ int strappend(char **a, const char *b)
 	*a = tmp;
 	memcpy((*a) + al, b, bl + 1);
 	return 0;
+}
+
+/* the hybrid version of strfconcat and strappend. */
+int strfappend(char **a, const char *format, ...)
+{
+	va_list ap;
+	int res;
+
+	va_start(ap, format);
+	res = strvfappend(a, format, ap);
+	va_end(ap);
+
+	return res;
+}
+
+extern int strvfappend(char **a, const char *format, va_list ap)
+{
+	char *val;
+	int sz;
+	int res;
+
+	sz = vasprintf(&val, format, ap);
+	if (sz < 0)
+		return -errno;
+
+	res = strappend(a, val);
+	free(val);
+	return res;
 }
 
 static size_t strcspn_escaped(const char *s, const char *reject)
@@ -1172,6 +1231,8 @@ int ul_optstr_next(char **optstr, char **name, size_t *namesz,
 		optstr0++;
 
 	for (p = optstr0; p && *p; p++) {
+		if (!start && *p == '=')
+			return -EINVAL;
 		if (!start)
 			start = p;		/* beginning of the option item */
 		if (*p == '"')
@@ -1180,7 +1241,7 @@ int ul_optstr_next(char **optstr, char **name, size_t *namesz,
 			continue;		/* still in quoted block */
 		if (!sep && p > start && *p == '=')
 			sep = p;		/* name and value separator */
-		if (*p == ',')
+		if (*p == ',' && (p == optstr0 || *(p - 1) != '\\'))
 			stop = p;		/* terminate the option item */
 		else if (*(p + 1) == '\0')
 			stop = p + 1;		/* end of optstr */
@@ -1207,7 +1268,19 @@ int ul_optstr_next(char **optstr, char **name, size_t *namesz,
 	return 1;				/* end of optstr */
 }
 
+int ul_optstr_is_valid(const char *optstr)
+{
+	int rc;
+	char *p = (char *) optstr;
+
+	while ((rc = ul_optstr_next(&p, NULL, NULL, NULL, NULL)) == 0);
+	return rc < 0 ? 0 : 1;
+}
+
 #ifdef TEST_PROGRAM_STRUTILS
+
+#include "cctype.h"
+
 struct testS {
 	char *name;
 	char *value;
@@ -1308,6 +1381,26 @@ done:
 	return EXIT_SUCCESS;
 }
 
+static int test_strutils_cstrcasecmp(int argc, char *argv[])
+{
+	char *a, *b;
+
+	if (argc < 3)
+		return EXIT_FAILURE;
+
+	a = argv[1];
+	b = argv[2];
+
+	if (!a || !b)
+		return EXIT_FAILURE;
+
+	printf("cmp    '%s' '%s' = %d\n", a, b, strcasecmp(a, b));
+	printf("c_cmp  '%s' '%s' = %d\n", a, b, c_strcasecmp(a, b));
+	printf("c_ncmp '%s' '%s' = %d\n", a, b, c_strncasecmp(a, b, strlen(a)));
+
+	return EXIT_SUCCESS;
+}
+
 int main(int argc, char *argv[])
 {
 	if (argc == 3 && strcmp(argv[1], "--size") == 0) {
@@ -1323,9 +1416,12 @@ int main(int argc, char *argv[])
 		printf("%s\n", ul_stralnumcmp(argv[2], argv[3]) == 0 ?
 				"match" : "dismatch");
 		return EXIT_SUCCESS;
+
+	} else if (argc == 4 && strcmp(argv[1], "--cstrcasecmp") == 0) {
+		return test_strutils_cstrcasecmp(argc - 1, argv + 1);
+
 	} else if (argc == 3 && strcmp(argv[1], "--normalize") == 0) {
 		return test_strutils_normalize(argc - 1, argv + 1);
-
 
 	} else if (argc == 3 && strcmp(argv[1], "--strtos64") == 0) {
 		printf("'%s'-->%jd\n", argv[2], strtos64_or_err(argv[2], "strtos64 failed"));
@@ -1350,11 +1446,39 @@ int main(int argc, char *argv[])
 		printf("\"%s\" --> \"%s\"\n", argv[2], ul_strchr_escaped(argv[2], *argv[3]));
 		return EXIT_SUCCESS;
 
+	} else if (argc == 2 && strcmp(argv[1], "--next-string") == 0) {
+		char *buf = "abc\0Y\0\0xyz\0X";
+		char *end = buf + 12;
+		char *p = buf;
+
+		do {
+			printf("str: '%s'\n", p);
+		} while ((p = ul_next_string(p, end)));
+
+		return EXIT_SUCCESS;
+
+	} else if (argc == 3 && strcmp(argv[1], "--optstr") == 0) {
+
+		size_t namesz, valsz;
+		char *name = NULL, *val = NULL;
+		char *p = argv[2];
+		int rc;
+
+		if (!ul_optstr_is_valid(p))
+			errx(EXIT_FAILURE, _("unsupported option format: %s"), p);
+
+		while ((rc = ul_optstr_next(&p, &name, &namesz, &val, &valsz)) == 0) {
+			printf("'%.*s' : '%.*s'\n", (int) namesz, name,
+						   (int) valsz, val);
+		}
+		if (rc == 1)
+			return EXIT_SUCCESS;
 	} else {
 		fprintf(stderr, "usage: %1$s --size <number>[suffix]\n"
 				"       %1$s --cmp-paths <path> <path>\n"
 				"       %1$s --strdup-member <str> <str>\n"
 				"       %1$s --stralnumcmp <str> <str>\n"
+				"       %1$s --cstrcasecmp <str> <str>\n"
 				"       %1$s --normalize <str>\n"
 				"       %1$s --strto{s,u}{16,32,64} <str>\n",
 				argv[0]);

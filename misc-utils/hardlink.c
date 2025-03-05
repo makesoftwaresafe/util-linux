@@ -46,6 +46,10 @@
 # endif
 #endif
 
+#if defined(FTW_ACTIONRETVAL) && defined(FTW_SKIP_SUBTREE)
+# define USE_SKIP_SUBTREE 1
+#endif
+
 #include "nls.h"
 #include "c.h"
 #include "xalloc.h"
@@ -67,6 +71,8 @@
 
 static int quiet;		/* don't print anything */
 static int rootbasesz;		/* size of the directory for nftw() */
+
+static unsigned short curr_tree;	/* seq. number of the current top-level directory */
 
 #ifdef USE_REFLINK
 enum {
@@ -106,6 +112,8 @@ struct file {
 		char path[1];
 #endif
 	} *links;
+
+	unsigned short tree_seqnum;
 };
 
 /**
@@ -154,6 +162,7 @@ struct hdl_regex {
  * struct options - Processed command-line options
  * @include: A linked list of regular expressions for the --include option
  * @exclude: A linked list of regular expressions for the --exclude option
+ * @exclude_subtree: A linked list of regular expressions for the --exclude-subtree options
  * @verbosity: The verbosity. Should be one of #enum log_level
  * @respect_mode: Whether to respect file modes (default = TRUE)
  * @respect_owner: Whether to respect file owners (uid, gid; default = TRUE)
@@ -163,6 +172,7 @@ struct hdl_regex {
  * @maximise: Chose the file with the highest link count as master
  * @minimise: Chose the file with the lowest link count as master
  * @keep_oldest: Choose the file with oldest timestamp as master (default = FALSE)
+ * @prio_trees: Prioritize trees; choose the file that was found in the earliest specified tree (default = FALSE)
  * @dry_run: Specifies whether hardlink should not link files (default = FALSE)
  * @min_size: Minimum size of files to consider. (default = 1 byte)
  * @max_size: Maximum size of files to consider, 0 means umlimited. (default = 0 byte)
@@ -170,19 +180,24 @@ struct hdl_regex {
 static struct options {
 	struct hdl_regex *include;
 	struct hdl_regex *exclude;
+	struct hdl_regex *exclude_subtree;
 
 	const char *method;
 	signed int verbosity;
-	unsigned int respect_mode:1;
-	unsigned int respect_owner:1;
-	unsigned int respect_name:1;
-	unsigned int respect_dir:1;
-	unsigned int respect_time:1;
-	unsigned int respect_xattrs:1;
-	unsigned int maximise:1;
-	unsigned int minimise:1;
-	unsigned int keep_oldest:1;
-	unsigned int dry_run:1;
+	bool respect_mode;
+	bool respect_owner;
+	bool respect_name;
+	bool respect_dir;
+	bool respect_time;
+	bool respect_xattrs;
+	bool maximise;
+	bool minimise;
+	bool keep_oldest;
+	bool prio_trees;
+	bool dry_run;
+	bool list_duplicates;
+	bool within_mount;
+	char line_delim;
 	uintmax_t min_size;
 	uintmax_t max_size;
 	size_t io_size;
@@ -199,6 +214,8 @@ static struct options {
 	.respect_time = TRUE,
 	.respect_xattrs = FALSE,
 	.keep_oldest = FALSE,
+	.prio_trees = FALSE,
+	.line_delim = '\n',
 	.min_size = 1,
 	.cache_size = 10*1024*1024
 };
@@ -218,7 +235,7 @@ static void *files_by_ino;
  * The last signal we received. We store the signal here in order to be able
  * to break out of loops gracefully and to return from our nftw() handler.
  */
-static int last_signal;
+static volatile sig_atomic_t last_signal;
 
 
 #define is_log_enabled(_level)  (quiet == 0 && (_level) <= (unsigned int)opts.verbosity)
@@ -323,10 +340,10 @@ static inline int filename_strcmp(const struct file *a, const struct file *b)
 /**
  * Compare only directory names (ignores root directory and basename (filename))
  *
- * The complete path conrains three fragments:
+ * The complete path contains three fragments:
  *
  * <rootdir> is specified on hardlink command line
- * <dirname> is all betweehn rootdir and filename
+ * <dirname> is all between rootdir and filename
  * <filename> is last component (aka basename)
  */
 static inline int dirname_strcmp(const struct file *a, const struct file *b)
@@ -418,23 +435,20 @@ static void print_stats(void)
 
 /**
  * handle_interrupt - Handle a signal
- *
- * Returns: %TRUE on SIGINT, SIGTERM; %FALSE on all other signals.
  */
-static int handle_interrupt(void)
+static void handle_interrupt(void)
 {
 	switch (last_signal) {
-	case SIGINT:
-	case SIGTERM:
-		return TRUE;
 	case SIGUSR1:
 		print_stats();
 		putchar('\n');
 		break;
+	default:
+		signal(last_signal, SIG_DFL);
+		raise(last_signal);
+		break;
 	}
-
 	last_signal = 0;
-	return FALSE;
 }
 
 #ifdef USE_XATTR
@@ -508,7 +522,7 @@ static int cmp_xattr_name_ptrs(const void *ptr1, const void *ptr2)
  */
 static const char **get_sorted_xattr_name_table(const char *names, int n)
 {
-	const char **table = xmalloc(n * sizeof(char *));
+	const char **table = xcalloc(n, sizeof(char *));
 	int i;
 
 	for (i = 0; i < n; i++) {
@@ -579,8 +593,7 @@ static int file_xattrs_equal(const struct file *a, const struct file *b)
 	// We now have two sorted tables of xattr names.
 
 	for (i = 0; i < n_a; i++) {
-		if (handle_interrupt())
-			goto exit;	// user wants to quit
+		handle_interrupt();
 
 		if (strcmp(name_ptrs_a[i], name_ptrs_b[i]) != 0)
 			goto exit;	// names at same slot differ
@@ -639,8 +652,7 @@ static int file_xattrs_equal(const struct file *a, const struct file *b)
  */
 static int file_may_link_to(const struct file *a, const struct file *b)
 {
-	return (a->st.st_size != 0 &&
-		a->st.st_size == b->st.st_size &&
+	return (a->st.st_size == b->st.st_size &&
 		a->links != NULL && b->links != NULL &&
 		a->st.st_dev == b->st.st_dev &&
 		a->st.st_ino != b->st.st_ino &&
@@ -672,6 +684,8 @@ static int file_compare(const struct file *a, const struct file *b)
 		res = CMP(a->st.st_nlink, b->st.st_nlink);
 	if (res == 0 && opts.minimise)
 		res = CMP(b->st.st_nlink, a->st.st_nlink);
+	if (res == 0 && opts.prio_trees)
+		res = CMP(a->tree_seqnum, b->tree_seqnum);
 	if (res == 0)
 		res = opts.keep_oldest ? CMP(b->st.st_mtime, a->st.st_mtime)
 		    : CMP(a->st.st_mtime, b->st.st_mtime);
@@ -834,10 +848,18 @@ static int inserter(const char *fpath, const struct stat *sb,
 	int included;
 	int excluded;
 
-	if (handle_interrupt())
-		return 1;
+	handle_interrupt();
 	if (typeflag == FTW_DNR || typeflag == FTW_NS)
 		warn(_("cannot read %s"), fpath);
+#ifdef USE_SKIP_SUBTREE
+	if (opts.exclude_subtree
+	    && typeflag == FTW_D
+	    && match_any_regex(opts.exclude_subtree, fpath)) {
+		jlog(JLOG_VERBOSE1,
+			_("Skipped (excluded subtree) %s"), fpath);
+		return FTW_SKIP_SUBTREE;
+	}
+#endif
 	if (typeflag != FTW_F || !S_ISREG(sb->st_mode))
 		return 0;
 
@@ -845,14 +867,17 @@ static int inserter(const char *fpath, const struct stat *sb,
 	excluded = match_any_regex(opts.exclude, fpath);
 
 	if ((opts.exclude && excluded && !included) ||
-	    (!opts.exclude && opts.include && !included))
+	    (!opts.exclude && opts.include && !included)) {
+		jlog(JLOG_VERBOSE1,
+			_("Skipped (excluded) %s"), fpath);
 		return 0;
+	}
 
 	stats.files++;
 
 	if ((uintmax_t) sb->st_size < opts.min_size) {
 		jlog(JLOG_VERBOSE1,
-		     _("Skipped %s (smaller than configured size)"), fpath);
+		     _("Skipped (smaller than configured size) %s"), fpath);
 		return 0;
 	}
 
@@ -862,7 +887,7 @@ static int inserter(const char *fpath, const struct stat *sb,
 
 	if ((opts.max_size > 0) && ((uintmax_t) sb->st_size > opts.max_size)) {
 		jlog(JLOG_VERBOSE1,
-		     _("Skipped %s (greater than configured size)"), fpath);
+		     _("Skipped (greater than configured size) %s"), fpath);
 		return 0;
 	}
 
@@ -875,6 +900,7 @@ static int inserter(const char *fpath, const struct stat *sb,
 	fil->links->basename = ftwbuf->base;
 	fil->links->dirname = rootbasesz;
 	fil->links->next = NULL;
+	fil->tree_seqnum = curr_tree;
 
 	memcpy(fil->links->path, fpath, pathlen);
 
@@ -890,7 +916,7 @@ static int inserter(const char *fpath, const struct stat *sb,
 
 		if (has_fpath(*node, fpath)) {
 			jlog(JLOG_VERBOSE1,
-				_("Skipped %s (specified more than once)"), fpath);
+				_("Skipped (specified more than once) %s"), fpath);
 			free(fil->links);
 		} else {
 			fil->links->next = (*node)->links;
@@ -991,7 +1017,8 @@ static int is_reflink(struct file *xa, struct file *xb)
 		if (ioctl(bf, FS_IOC_FIEMAP, (unsigned long) bmap) < 0)
 			goto done;
 
-		if (amap->fm_mapped_extents != bmap->fm_mapped_extents)
+		if (amap->fm_mapped_extents == 0 ||
+		    amap->fm_mapped_extents != bmap->fm_mapped_extents)
 			goto done;
 
 		for (i = 0; i < amap->fm_mapped_extents; i++) {
@@ -1059,8 +1086,7 @@ static void visitor(const void *nodep, const VISIT which, const int depth)
 		size_t nnodes, memsiz;
 		int may_reflink = 0;
 
-		if (handle_interrupt())
-			exit(EXIT_FAILURE);
+		handle_interrupt();
 		if (master->links == NULL)
 			continue;
 
@@ -1085,8 +1111,7 @@ static void visitor(const void *nodep, const VISIT which, const int depth)
 		for (other = master->next; other != NULL; other = other->next) {
 			int eq;
 
-			if (handle_interrupt())
-				exit(EXIT_FAILURE);
+			handle_interrupt();
 
 			assert(other != other->next);
 			assert(other->st.st_size == master->st.st_size);
@@ -1141,6 +1166,10 @@ static void visitor(const void *nodep, const VISIT which, const int depth)
 
 	/* final cleanup */
 	for (other = begin; other != NULL; other = other->next) {
+		if (opts.list_duplicates && other->st.st_nlink > 1)
+			for (struct link *l = other->links; l; l = l->next)
+				printf("%016zu\t%s%c", (size_t)other, l->path, opts.line_delim);
+
 		if (ul_fileeq_data_associated(&other->data))
 			ul_fileeq_data_deinit(&other->data);
 	}
@@ -1171,7 +1200,12 @@ static void __attribute__((__noreturn__)) usage(void)
 	        "                              lowest hardlink count\n"), out);
 	fputs(_(" -M, --minimize             reverse the meaning of -m\n"), out);
 	fputs(_(" -n, --dry-run              don't actually link anything\n"), out);
+	fputs(_(" -l, --list-duplicates      print every group of duplicate files\n"), out);
+	fputs(_(" -z, --zero                 delimit output with NULs instead of newlines\n"), out);
 	fputs(_(" -o, --ignore-owner         ignore owner changes\n"), out);
+	fputs(_(" -F, --prioritize-trees     files found in the earliest specified top-level\n"
+                "                              directory have higher priority (lower precedence\n"
+		"                              than minimize/maximize)\n"), out);
 	fputs(_(" -O, --keep-oldest          keep the oldest file of multiple equal files\n"
 		"                              (lower precedence than minimize/maximize)\n"), out);
 	fputs(_(" -p, --ignore-mode          ignore changes of file mode\n"), out);
@@ -1182,6 +1216,10 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -t, --ignore-time          ignore timestamps (when testing for equality)\n"), out);
 	fputs(_(" -v, --verbose              verbose output (repeat for more verbosity)\n"), out);
 	fputs(_(" -x, --exclude <regex>      regular expression to exclude files\n"), out);
+#ifdef USE_SKIP_SUBTREE
+	fputs(_("     --exclude-subtree <regex>  regular expression to exclude directories\n"), out);
+#endif
+	fputs(_("     --mount                stay within the same filesystem\n"), out);
 #ifdef USE_XATTR
 	fputs(_(" -X, --respect-xattrs       respect extended attributes\n"), out);
 #endif
@@ -1192,8 +1230,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("     --skip-reflinks        skip already cloned files (enabled on --reflink)\n"), out);
 #endif
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(28));
-	printf(USAGE_MAN_TAIL("hardlink(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(28));
+	fprintf(out, USAGE_MAN_TAIL("hardlink(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -1207,9 +1245,11 @@ static int parse_options(int argc, char *argv[])
 {
 	enum {
 		OPT_REFLINK = CHAR_MAX + 1,
-		OPT_SKIP_RELINKS
+		OPT_SKIP_RELINKS,
+		OPT_EXCLUDE_SUBTREE,
+		OPT_MOUNT
 	};
-	static const char optstr[] = "VhvndfpotXcmMOx:y:i:r:S:s:b:q";
+	static const char optstr[] = "VhvndfpotXcmMFOlzx:y:i:r:S:s:b:q";
 	static const struct option long_options[] = {
 		{"version", no_argument, NULL, 'V'},
 		{"help", no_argument, NULL, 'h'},
@@ -1223,9 +1263,14 @@ static int parse_options(int argc, char *argv[])
 		{"respect-xattrs", no_argument, NULL, 'X'},
 		{"maximize", no_argument, NULL, 'm'},
 		{"minimize", no_argument, NULL, 'M'},
+		{"prioritize-trees", no_argument, NULL, 'F'},
 		{"keep-oldest", no_argument, NULL, 'O'},
 		{"exclude", required_argument, NULL, 'x'},
 		{"include", required_argument, NULL, 'i'},
+#ifdef USE_SKIP_SUBTREE
+		{"exclude-subtree", required_argument, NULL, OPT_EXCLUDE_SUBTREE},
+#endif
+		{"mount", no_argument, NULL, OPT_MOUNT},
 		{"method", required_argument, NULL, 'y' },
 		{"minimum-size", required_argument, NULL, 's'},
 		{"maximum-size", required_argument, NULL, 'S'},
@@ -1237,6 +1282,8 @@ static int parse_options(int argc, char *argv[])
 		{"content", no_argument, NULL, 'c'},
 		{"quiet", no_argument, NULL, 'q'},
 		{"cache-size", required_argument, NULL, 'r'},
+		{"list-duplicates", no_argument, NULL, 'l'},
+		{"zero", no_argument, NULL, 'z'},
 		{NULL, 0, NULL, 0}
 	};
 	static const ul_excl_t excl[] = {
@@ -1272,6 +1319,9 @@ static int parse_options(int argc, char *argv[])
 		case 'O':
 			opts.keep_oldest = TRUE;
 			break;
+		case 'F':
+			opts.prio_trees = TRUE;
+			break;
 		case 'f':
 			opts.respect_name = TRUE;
 			break;
@@ -1293,6 +1343,11 @@ static int parse_options(int argc, char *argv[])
 		case 'x':
 			register_regex(&opts.exclude, optarg);
 			break;
+#ifdef USE_SKIP_SUBTREE
+		case OPT_EXCLUDE_SUBTREE:
+			register_regex(&opts.exclude_subtree, optarg);
+			break;
+#endif
 		case 'y':
 			opts.method = optarg;
 			break;
@@ -1310,6 +1365,14 @@ static int parse_options(int argc, char *argv[])
 			break;
 		case 'b':
 			opts.io_size = strtosize_or_err(optarg, _("failed to parse I/O size"));
+			break;
+		case 'l':
+			opts.list_duplicates = TRUE;
+			opts.dry_run = TRUE;
+			quiet = TRUE;
+			break;
+		case 'z':
+			opts.line_delim = '\0';
 			break;
 #ifdef USE_REFLINK
 		case OPT_REFLINK:
@@ -1331,16 +1394,22 @@ static int parse_options(int argc, char *argv[])
 			reflinks_skip = 1;
 			break;
 #endif
+		case OPT_MOUNT:
+			opts.within_mount = 1;
+			break;
 		case 'h':
 			usage();
 		case 'V':
 		{
-			static const char *features[] = {
+			static const char *const features[] = {
 #ifdef USE_REFLINK
 				"reflink",
 #endif
 #ifdef USE_FILEEQ_CRYPTOAPI
 				"cryptoapi",
+#endif
+#ifdef USE_SKIP_SUBTREE
+				"ftw_skip_subtree",
 #endif
 				NULL
 			};
@@ -1377,22 +1446,19 @@ static void to_be_called_atexit(void)
 */
 static void sighandler(int i)
 {
-	if (last_signal != SIGINT)
-		last_signal = i;
-	if (i == SIGINT)
-		putchar('\n');
+	last_signal = i;
 }
 
 int main(int argc, char *argv[])
 {
 	struct sigaction sa;
 	int rc;
+	int ftw_flags;
 
 	sa.sa_handler = sighandler;
 	sa.sa_flags = SA_RESTART;
 	sigfillset(&sa.sa_mask);
 
-	/* If we receive a SIGINT, end the processing */
 	sigaction(SIGINT, &sa, NULL);
 	sigaction(SIGUSR1, &sa, NULL);
 
@@ -1420,7 +1486,7 @@ int main(int argc, char *argv[])
 	if (rc < 0)
 		err(EXIT_FAILURE, _("failed to initialize files comparior"));
 
-	/* defautl I/O size */
+	/* default I/O size */
 	if (!opts.io_size) {
 		if (strcmp(opts.method, "memcmp") == 0)
 			opts.io_size = 8*1024;
@@ -1430,6 +1496,15 @@ int main(int argc, char *argv[])
 
 	stats.started = TRUE;
 
+	ftw_flags = FTW_PHYS;
+
+	if (opts.within_mount)
+		ftw_flags |= FTW_MOUNT;
+
+#ifdef USE_SKIP_SUBTREE
+	if (opts.exclude_subtree)
+		ftw_flags |= FTW_ACTIONRETVAL;
+#endif
 	jlog(JLOG_VERBOSE2, _("Scanning [device/inode/links]:"));
 	for (; optind < argc; optind++) {
 		char *path = realpath(argv[optind], NULL);
@@ -1440,8 +1515,12 @@ int main(int argc, char *argv[])
 		}
 		if (opts.respect_dir)
 			rootbasesz = strlen(path);
-		if (nftw(path, inserter, 20, FTW_PHYS) == -1)
+		if (opts.prio_trees)
+			++curr_tree;
+
+		if (nftw(path, inserter, 20, ftw_flags) == -1)
 			warn(_("cannot process %s"), path);
+
 		free(path);
 		rootbasesz = 0;
 	}

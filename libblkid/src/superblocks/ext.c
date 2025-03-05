@@ -156,8 +156,30 @@ static struct ext2_super_block *ext_get_super(
 		return NULL;
 	if (le32_to_cpu(es->s_feature_ro_compat) & EXT4_FEATURE_RO_COMPAT_METADATA_CSUM) {
 		uint32_t csum = crc32c(~0, es, offsetof(struct ext2_super_block, s_checksum));
-		if (!blkid_probe_verify_csum(pr, csum, le32_to_cpu(es->s_checksum)))
+		/*
+		 * A read of the superblock can race with other updates to the
+		 * same superblock.  In the unlikely event that this occurs and
+		 * we see a checksum failure, re-read the superblock with
+		 * O_DIRECT to ensure that it's consistent.  If it _still_ fails
+		 * then declare a checksum mismatch.
+		 */
+		if (!blkid_probe_verify_csum(pr, csum, le32_to_cpu(es->s_checksum))) {
+#ifdef O_DIRECT
+			if (blkid_probe_reset_buffers(pr))
+				return NULL;
+
+			es = (struct ext2_super_block *)
+			    blkid_probe_get_buffer_direct(pr, EXT_SB_OFF, sizeof(struct ext2_super_block));
+			if (!es)
+				return NULL;
+
+			csum = crc32c(~0, es, offsetof(struct ext2_super_block, s_checksum));
+			if (!blkid_probe_verify_csum(pr, csum, le32_to_cpu(es->s_checksum)))
+				return NULL;
+#else
 			return NULL;
+#endif
+		}
 	}
 	if (fc)
 		*fc = le32_to_cpu(es->s_feature_compat);
@@ -209,9 +231,9 @@ static void ext_get_info(blkid_probe pr, int ver, struct ext2_super_block *es)
 		(uint64_t) le32_to_cpu(es->s_blocks_count_hi) << 32 : 0);
 	blkid_probe_set_fslastblock(pr, fslastblock);
 
-	/* The total number of blocks is taken without substraction of overhead
+	/* The total number of blocks is taken without subtraction of overhead
 	 * (journal, metadata). The ext4 has non-trivial overhead calculation
-	 * viz. ext4_calculate_overhead(). Thefore, the FSSIZE would show number
+	 * viz. ext4_calculate_overhead(). Therefore, the FSSIZE would show number
 	 * slightly higher than the real value (for example, calculated via
 	 * statfs()).
 	 */
